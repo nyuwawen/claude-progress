@@ -876,6 +876,7 @@ if ($Demo) {
 # so it's clear the app started.
 $script:startedAt = [double][DateTimeOffset]::UtcNow.ToUnixTimeMilliseconds()
 $GRACE = 6000
+$DONE_MS = if ($Demo) { 120000 } else { 8000 }   # how long a finished chat's card stays (the demo keeps them to show the summary)
 $script:cards = @{}
 $script:order = ''
 function Update-View {
@@ -890,7 +891,8 @@ function Update-View {
       $s = $p.Value
       # A chat silent for 30 minutes is treated as stopped.
       if ($s.turnStartedAt -and ($now - [double]$s.updatedAt) -lt 1800000) { $active += [pscustomobject]@{ id = $p.Name; s = $s } }
-      elseif ($s.finishedAt -and $s.lastTurnStartedAt -and ($now - [double]$s.finishedAt) -lt 120000) { $finished += [pscustomobject]@{ id = $p.Name; s = $s } }
+      # A finished chat shows "Finished" for a few seconds, then its card folds away.
+      elseif ($s.finishedAt -and $s.lastTurnStartedAt -and ($now - [double]$s.finishedAt) -lt $DONE_MS) { $finished += [pscustomobject]@{ id = $p.Name; s = $s } }
     }
   }
   $active = @($active | Sort-Object { [double]$_.s.turnStartedAt })
