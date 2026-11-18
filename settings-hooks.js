@@ -39,6 +39,7 @@ if (action === 'add') {
     if (matcher) group.matcher = matcher
     hooks[ev] = [...(hooks[ev] || []), group]
   }
+  add('SessionStart', 'session') // opens the window as soon as a Claude session starts
   add('UserPromptSubmit', 'prompt')
   add('PreToolUse', 'pre', '*')
   add('PostToolUse', 'post', '*')

@@ -185,5 +185,23 @@ const withLock = fn => {
   }
 }
 
-try { withLock(() => main(process.argv[2])) } catch {}
-process.exit(0)
+// Opens the window if it isn't running. The window touches "alive" every few seconds; if that's
+// stale, start it through Task Scheduler (so it belongs to Windows, not to Claude, and keeps
+// running when Claude closes).
+const ensureWindow = () => {
+  if (process.env.CLAUDE_PROGRESS_DIR) return // demo
+  const alive = path.join(DIR, 'alive')
+  let age = Infinity
+  try { age = Date.now() - fs.statSync(alive).mtimeMs } catch {}
+  if (age < 20000) return
+  try { fs.mkdirSync(DIR, { recursive: true }); fs.writeFileSync(alive, '') } catch {} // no double launch while it starts
+  try {
+    const { spawn } = require('child_process')
+    spawn('schtasks.exe', ['/run', '/tn', 'Claude Progress'], { detached: true, stdio: 'ignore', windowsHide: true }).unref()
+  } catch {}
+}
+
+const event = process.argv[2]
+try { ensureWindow() } catch {}
+if (event !== 'session') { try { withLock(() => main(event)) } catch {} }
+setTimeout(() => process.exit(0), 50) // let the launcher start before exiting

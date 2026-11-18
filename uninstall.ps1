@@ -1,6 +1,6 @@
 ﻿# Claude Progress - uninstaller.
 $ErrorActionPreference = 'Continue'
-$dest = Join-Path $env:LOCALAPPDATA 'ClaudeProgress'
+$dest = Join-Path $env:USERPROFILE '.claude-progress\app'
 Write-Host 'Removing Claude Progress...' -ForegroundColor Cyan
 
 # Close the window
@@ -13,7 +13,8 @@ $node = (Get-Command node -ErrorAction SilentlyContinue).Source
 $helper = Join-Path $dest 'settings-hooks.js'
 if ($node -and (Test-Path $helper)) { & $node $helper remove }
 
-# Shortcuts
+# Task Scheduler entry and shortcuts
+try { Unregister-ScheduledTask -TaskName 'Claude Progress' -Confirm:$false -ErrorAction Stop } catch {}
 Remove-Item (Join-Path ([Environment]::GetFolderPath('Programs')) 'Claude Progress') -Recurse -Force -ErrorAction SilentlyContinue
 Remove-Item (Join-Path ([Environment]::GetFolderPath('Startup')) 'Claude Progress.lnk') -Force -ErrorAction SilentlyContinue
 

@@ -1089,6 +1089,16 @@ $ui.ModeNeutral.Add_Click({ Set-Mode 'Neutral' })
 $ui.ModeFull.Add_Click({ Set-Mode 'Full' })
 Set-Mode ([string]$prefs.mode) $false
 # A first trim once the window has settled.
+# Heartbeat: hook.js checks this file and reopens the window if it stops being touched.
+if (-not $Demo -and -not $Snapshot -and -not $SelfTest) {
+  $aliveFile = Join-Path $root 'alive'
+  $heart = New-Object System.Windows.Threading.DispatcherTimer
+  $heart.Interval = [TimeSpan]::FromSeconds(5)
+  $heart.Add_Tick({ try { [System.IO.File]::WriteAllText($aliveFile, '') } catch {} })
+  $heart.Start()
+  try { [System.IO.File]::WriteAllText($aliveFile, '') } catch {}
+}
+
 $firstTrim = New-Object System.Windows.Threading.DispatcherTimer
 $firstTrim.Interval = [TimeSpan]::FromSeconds(5)
 $firstTrim.Add_Tick({ $firstTrim.Stop(); if ($script:perf.trim -gt 0) { try { Invoke-Trim } catch {} } })

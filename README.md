@@ -108,6 +108,7 @@ The installer registers `hook.js` as a Claude Code [hook](https://docs.claude.co
 
 | Hook | Meaning |
 | --- | --- |
+| `SessionStart` | a session opens (also reopens the window if it was closed) |
 | `UserPromptSubmit` | a job starts |
 | `PreToolUse` | a step starts |
 | `PostToolUse` / `PostToolUseFailure` | a step ends (or fails) |
@@ -121,10 +122,10 @@ The window (`ClaudeProgress.ps1`) is WPF running in Windows PowerShell 5.1, so t
 <details>
 <summary><b>What the installer changes</b></summary>
 
-- Copies the app to `%LOCALAPPDATA%\ClaudeProgress`
-- Adds five hooks to `~/.claude/settings.json`. A backup is saved first as `settings.json.before-claude-progress.bak`, and your other settings and hooks are kept. Running it twice doesn't duplicate anything.
+- Copies the app to `%USERPROFILE%\.claude-progress\app`
+- Adds six hooks to `~/.claude/settings.json`. A backup is saved first as `settings.json.before-claude-progress.bak`, and your other settings and hooks are kept. Running it twice doesn't duplicate anything.
 - Adds Start menu shortcuts (**Claude Progress**, **Claude Progress Demo**, **Uninstall Claude Progress**)
-- Starts the app with Windows
+- Starts the app with Windows, and adds a **Claude Progress** task in Task Scheduler that the hook uses to reopen the window whenever a Claude session starts and it isn't running
 
 </details>
 
@@ -148,7 +149,7 @@ The window (`ClaudeProgress.ps1`) is WPF running in Windows PowerShell 5.1, so t
 ## ❓ FAQ
 
 **The window isn't showing.**
-If **Hide when Claude is idle** is on, it only appears while Claude is working. Otherwise open **Claude Progress** from the Start menu. It also starts automatically when you sign in.
+If **Hide when Claude is idle** is on, it only appears while Claude is working. It starts when you sign in, and if it was closed, it reopens by itself the next time a Claude session starts or Claude works. You can also open **Claude Progress** from the Start menu.
 
 **It says "no estimate yet (learning)".**
 That's the first time it has timed that kind of step. After one run it has a time to go on, and estimates get better with use.
