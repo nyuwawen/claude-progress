@@ -690,6 +690,10 @@ if ($Demo) {
 }
 
 # ---------- refresh loop ----------
+# When opened by hand while Claude is idle, show for a few seconds even if "Hide when idle" is on,
+# so it's clear the app started.
+$script:startedAt = [double][DateTimeOffset]::UtcNow.ToUnixTimeMilliseconds()
+$GRACE = 6000
 $script:cards = @{}
 $script:order = ''
 function Update-View {
@@ -749,11 +753,14 @@ function Update-View {
     $ui.Title.Text = 'Claude finished'
   } else {
     $ui.Dot.Fill = $script:T.done
-    $ui.Title.Text = if ($Demo) { 'Demo finished - right-click to exit' } else { 'Claude is idle' }
+    $ui.Title.Text = if ($Demo) { 'Demo finished - right-click to exit' }
+      elseif ($prefs.hideIdle) { 'Claude is idle  ·  I''ll appear when Claude works' }
+      else { 'Claude is idle' }
   }
   $ui.Count.Text = if ($shown.Count -gt 0) { "$($active.Count) working  ·  $($finished.Count) done" } else { '' }
   $ui.Legend.Visibility = if ($shown.Count -gt 0 -and $prefs.details) { 'Visible' } else { 'Collapsed' }
-  Set-WindowShown (-not ($shown.Count -eq 0 -and $prefs.hideIdle -and -not $Demo)) $now
+  $justOpened = ($now - $script:startedAt) -lt $GRACE
+  Set-WindowShown (-not ($shown.Count -eq 0 -and $prefs.hideIdle -and -not $Demo -and -not $justOpened)) $now
   if ($active.Count -eq 0) { $script:est = @{} }
 }
 
