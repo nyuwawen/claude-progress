@@ -1,0 +1,12 @@
+# Windows / editors
+Thumbs.db
+Desktop.ini
+*.tmp
+*.log
+*.bak
+.vscode/
+# Runtime data (lives in %USERPROFILE%\.claude-progress, never in the repo)
+state.json
+state.lock
+history.json
+window.json
