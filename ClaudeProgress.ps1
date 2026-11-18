@@ -805,7 +805,7 @@ if ($Snapshot) {
     $w = [math]::Ceiling($el.ActualWidth); $h = [math]::Ceiling($el.ActualHeight)
     $dv = New-Object System.Windows.Media.DrawingVisual
     $dc = $dv.RenderOpen()
-    $dc.DrawRectangle($backdrop, $null, (New-Object System.Windows.Rect(0, 0, $w, $h)))
+    # Transparent background, so the shots sit cleanly on light or dark pages.
     $dc.DrawRectangle((New-Object System.Windows.Media.VisualBrush($el)), $null, (New-Object System.Windows.Rect(0, 0, $w, $h)))
     $dc.Close()
     $rtb = New-Object System.Windows.Media.Imaging.RenderTargetBitmap(($w * 2), ($h * 2), 192, 192, [System.Windows.Media.PixelFormats]::Pbgra32)

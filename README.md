@@ -1,74 +1,100 @@
+<div align="center">
+
+<img src="screenshots/banner.png" alt="Claude Progress in its Normal, DADA and REN themes" width="100%">
+
 # Claude Progress
 
-A small always-on-top Windows window that shows what **Claude Code** is doing right now, step by step, how long it has been working and roughly how long is left.
+**A live progress window for Claude Code on Windows.**<br>
+See what Claude is doing right now, where the time went, and roughly how long is left.
 
-<p align="center">
-  <img src="screenshots/theme-DADA.png" width="32%" alt="DADA theme">
-  <img src="screenshots/theme-Ren.png" width="32%" alt="REN theme">
-  <img src="screenshots/theme-Normal.png" width="32%" alt="Normal theme">
-</p>
+![Windows](https://img.shields.io/badge/Windows-10%20%7C%2011-0078D4?logo=windows&logoColor=white)
+![PowerShell](https://img.shields.io/badge/PowerShell-5.1-5391FE?logo=powershell&logoColor=white)
+![Node.js](https://img.shields.io/badge/Node.js-required-5FA04E?logo=nodedotjs&logoColor=white)
+![Claude Code](https://img.shields.io/badge/Claude%20Code-hooks-D97757)
+![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)
 
-## Features
+[Quick start](#-quick-start) · [Features](#-features) · [Themes](#-themes) · [Options](#%EF%B8%8F-options) · [How it works](#-how-it-works) · [FAQ](#-faq)
 
-- **Live step-by-step view**: what Claude is doing now (reading, editing, running a command, rendering, browsing) with the file name or command.
-- **Timeline bar**: the whole job as coloured segments, so you can see where the time went, including time spent thinking.
-- **Honest estimates**: time left is learned from how long similar steps took before. When a step runs long the bar never sticks at 99%; it re-estimates, pulls the bar back and tells you why.
-- **One card per chat**: every Claude chat that is working gets its own progress card.
-- **Activity list**: each step with ✓ / ✗, how long it took, and what is running now.
-- **Themes**: Normal, **DADA** (purple) and **REN** (blue).
-- **Resizable**: Small to Extra large, or Ctrl + scroll.
-- **Performance modes**: Saver, Neutral and Full power.
-- Optional sound when a long job finishes, and an option to hide the window while Claude is idle.
+</div>
 
-## Requirements
+---
 
-- Windows 10 or 11
-- [Node.js](https://nodejs.org) (Claude Code already needs it)
-- [Claude Code](https://claude.com/claude-code) (CLI or the desktop app's Code tab)
+## 🚀 Quick start
 
-## Install
+1. **Download** this repo: green **Code** button → **Download ZIP**, then unzip it.
+2. **Double-click `Install.cmd`.**
+3. **Restart Claude** (or open a new session). That's it: the window appears whenever Claude works.
 
-1. Download this repository (green **Code** button > **Download ZIP**) and unzip it.
-2. Double-click **Install.cmd**.
-3. Restart Claude (or start a new session).
+> [!TIP]
+> Want to see it first? Double-click **`Try Demo.cmd`**. It plays two fake chats and installs nothing.
 
-The installer:
-- copies the app to `%LOCALAPPDATA%\ClaudeProgress`
-- adds five hooks to `~/.claude/settings.json` (a backup is saved next to it as `settings.json.before-claude-progress.bak`; your other settings and hooks are kept)
-- adds Start menu shortcuts (the app, a demo, an uninstaller) and starts the app with Windows
+## ✨ Features
 
-Want to see it first without installing anything? Double-click **Try Demo.cmd**.
-
-## Using it
-
-Right-click the window for all options:
-
-| Menu | Options |
+| | |
 | --- | --- |
-| Theme | Normal, DADA (purple), REN (blue) |
-| Performance | Saver, Neutral, Full power |
-| Size | Small, Medium, Large, Extra large (or hold Ctrl and scroll) |
-| Show activity details | the step list and colour legend |
-| Hide when Claude is idle | only show the window while Claude works |
-| Sound when a long job finishes | a chime after jobs longer than 30 seconds |
+| 🔍 **What's happening now** | Reading, editing, running a command, rendering, browsing, with the actual file name or command underneath. |
+| 🌈 **Timeline bar** | The whole job as coloured segments, so you can see where the time went, including time Claude spent thinking. |
+| ⏱️ **Honest estimates** | "Time left" is learned from how long similar steps took before. It never sticks at 99%: when a step runs long, the bar eases back, the extra time moves onto that step, and a note tells you why. |
+| 🗂️ **One card per chat** | Every Claude chat that's working gets its own progress card, labelled with its folder and your message. |
+| ✅ **Activity list** | Each step with ✓ or ✗, how long it took, and what's running now. |
+| 🎨 **Themes, sizes, modes** | Normal, DADA and REN themes · Small to Extra large (or Ctrl + scroll) · Saver, Neutral and Full power. |
+| 🔒 **Private** | Everything stays on your computer. Nothing is sent anywhere. |
 
-Drag the window anywhere; it remembers its place and your settings.
+## 🎨 Themes
+
+Right-click the window → **Theme**.
+
+<table>
+  <tr>
+    <th>Normal</th>
+    <th>DADA</th>
+    <th>REN</th>
+  </tr>
+  <tr>
+    <td><img src="screenshots/theme-Normal.png" alt="Normal theme"></td>
+    <td><img src="screenshots/theme-DADA.png" alt="DADA theme"></td>
+    <td><img src="screenshots/theme-Ren.png" alt="REN theme"></td>
+  </tr>
+  <tr>
+    <td>Warm charcoal with orange accents</td>
+    <td>Deep purple with a violet glow</td>
+    <td>Midnight blue with a cyan glow</td>
+  </tr>
+</table>
+
+## ⚙️ Options
+
+Right-click the window for everything. Drag it anywhere; it remembers its place and your settings.
+
+| Menu | Choices |
+| --- | --- |
+| **Theme** | Normal · DADA · REN |
+| **Performance** | Saver · Neutral · Full power |
+| **Size** | Small · Medium · Large · Extra large (or hold **Ctrl** and scroll) |
+| **Show activity details** | the step list and colour legend |
+| **Hide when Claude is idle** | only show the window while Claude works |
+| **Sound when a long job finishes** | a chime after jobs longer than 30 seconds |
 
 ### Performance modes
 
 Measured with the built-in two-chat demo:
 
-| Mode | CPU while Claude works | RAM | What you get |
+| Mode | CPU while Claude works | Memory | You get |
 | --- | --- | --- | --- |
-| Saver | ~3% | ~55–70 MB | no animation, no glow, updates every 1.5 s |
-| Neutral (default) | ~17% | ~80–90 MB | smooth motion at 40 fps |
-| Full power | ~18% | ~200 MB | smoothest, 60 fps, updates every 0.25 s |
+| 🍃 **Saver** | ~3% | ~55–70 MB | no animation, no glow, updates every 1.5 s |
+| ⚖️ **Neutral** *(default)* | ~17% | ~80–90 MB | smooth motion at 40 fps |
+| 🚀 **Full power** | ~18% | ~200 MB | smoothest, 60 fps, updates every 0.25 s |
 
-While Claude is idle and the window is hidden it uses almost nothing.
+When Claude is idle and the window is hidden, it uses almost nothing.
 
-## How it works
+## 🧠 How it works
 
-Claude Code can run a command on certain events ([hooks](https://docs.claude.com/en/docs/claude-code/hooks)). The installer registers `hook.js` for:
+```
+Claude Code ──hook events──▶ hook.js ──writes──▶ state.json ◀──reads── ClaudeProgress window
+                                     └──────────▶ history.json  (past step times → estimates)
+```
+
+The installer registers `hook.js` as a Claude Code [hook](https://docs.claude.com/en/docs/claude-code/hooks) for these events:
 
 | Hook | Meaning |
 | --- | --- |
@@ -77,15 +103,22 @@ Claude Code can run a command on certain events ([hooks](https://docs.claude.com
 | `PostToolUse` / `PostToolUseFailure` | a step ends (or fails) |
 | `Stop` | the job is finished |
 
-`hook.js` writes what is happening to `%USERPROFILE%\.claude-progress\state.json` and keeps the last 12 durations of each kind of step in `history.json`. The window (`ClaudeProgress.ps1`, WPF via Windows PowerShell) reads that file and draws it. The hook never prints anything and always exits successfully, so it can never block or slow down Claude.
+`hook.js` records what's happening in `%USERPROFILE%\.claude-progress\state.json` and keeps the last 12 durations of each kind of step in `history.json`. A file lock keeps several chats from overwriting each other. The hook never prints anything and always exits successfully, so it can never block or slow down Claude.
 
-Everything stays on your computer; nothing is sent anywhere.
+The window (`ClaudeProgress.ps1`) is WPF running in Windows PowerShell 5.1, so there's nothing extra to install beyond Node.js.
 
-## Uninstall
+<details>
+<summary><b>What the installer changes</b></summary>
 
-Start menu > **Claude Progress** > **Uninstall Claude Progress** (or run `Uninstall.cmd`). It closes the window, removes only its own hooks from your settings, and deletes the app and shortcuts. Your timing history in `%USERPROFILE%\.claude-progress` is kept; delete that folder if you like.
+- Copies the app to `%LOCALAPPDATA%\ClaudeProgress`
+- Adds five hooks to `~/.claude/settings.json`. A backup is saved first as `settings.json.before-claude-progress.bak`, and your other settings and hooks are kept. Running it twice doesn't duplicate anything.
+- Adds Start menu shortcuts (**Claude Progress**, **Claude Progress Demo**, **Uninstall Claude Progress**)
+- Starts the app with Windows
 
-## Files
+</details>
+
+<details>
+<summary><b>Files in this repo</b></summary>
 
 | File | What it is |
 | --- | --- |
@@ -96,7 +129,27 @@ Start menu > **Claude Progress** > **Uninstall Claude Progress** (or run `Uninst
 | `install.ps1`, `Install.cmd` | installer |
 | `uninstall.ps1`, `Uninstall.cmd` | uninstaller |
 | `Try Demo.cmd` | runs the demo without installing |
+| `screenshots/` | images for this page |
 
-## License
+</details>
 
-MIT, see [LICENSE](LICENSE).
+## ❓ FAQ
+
+**The window isn't showing.**
+If **Hide when Claude is idle** is on, it only appears while Claude is working. Otherwise open **Claude Progress** from the Start menu. It also starts automatically when you sign in.
+
+**It says "no estimate yet (learning)".**
+That's the first time it has timed that kind of step. After one run it has a time to go on, and estimates get better with use.
+
+**Does it slow Claude down?**
+No. The hook takes about 50 ms per step, never prints anything and always exits successfully.
+
+**Does it work with several Claude chats at once?**
+Yes. Each working chat gets its own card.
+
+**How do I remove it?**
+Start menu → **Claude Progress** → **Uninstall Claude Progress** (or run `Uninstall.cmd`). It closes the window, removes only its own hooks and deletes the app and shortcuts. Your timing history in `%USERPROFILE%\.claude-progress` stays; delete that folder if you like.
+
+## 📄 License
+
+[MIT](LICENSE) © 2026 nyuwawen
