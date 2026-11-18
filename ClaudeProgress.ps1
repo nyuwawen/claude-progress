@@ -88,18 +88,27 @@ $catNames = [ordered]@{ read = 'Reading'; edit = 'Editing'; run = 'Running'; ren
         Title="Claude Progress" SizeToContent="WidthAndHeight"
         WindowStyle="None" AllowsTransparency="True" Background="Transparent"
         Topmost="True" ShowInTaskbar="False" ResizeMode="NoResize">
-  <Grid Margin="14">
+  <!-- Fixed width: the window keeps its right edge when minimized (the empty part is click-through). -->
+  <Grid Margin="14" Width="440">
     <Grid.LayoutTransform>
       <ScaleTransform x:Name="Zoom" ScaleX="1" ScaleY="1"/>
     </Grid.LayoutTransform>
+    <Grid.Resources>
+      <!-- Tabular numbers: every digit is the same width, so counting timers and percentages never wobble. -->
+      <Style TargetType="TextBlock">
+        <Setter Property="Typography.NumeralAlignment" Value="Tabular"/>
+      </Style>
+    </Grid.Resources>
     <!-- The glow lives on its own static layer, cached as a bitmap, so animating content never re-blurs it. -->
-    <Border x:Name="GlowLayer" CornerRadius="14" Background="{DynamicResource ShellBg}" Margin="1">
+    <Border x:Name="GlowLayer" CornerRadius="14" Background="{DynamicResource ShellBg}" Margin="1"
+            HorizontalAlignment="Right" Width="{Binding ActualWidth, ElementName=Shell}">
       <Border.CacheMode><BitmapCache/></Border.CacheMode>
       <Border.Effect>
         <DropShadowEffect x:Name="Glow" BlurRadius="22" ShadowDepth="0" Opacity="0.5" Color="Black"/>
       </Border.Effect>
     </Border>
-    <Border x:Name="Shell" Width="440" CornerRadius="14" Background="{DynamicResource ShellBg}" BorderBrush="{DynamicResource ShellBorder}" BorderThickness="1" Padding="14,12">
+    <!-- Anchored right: minimizing shrinks the window toward its minimize button. -->
+    <Border x:Name="Shell" Width="440" HorizontalAlignment="Right" CornerRadius="14" Background="{DynamicResource ShellBg}" BorderBrush="{DynamicResource ShellBorder}" BorderThickness="1" Padding="14,12">
       <Border.ContextMenu>
         <ContextMenu>
           <MenuItem Header="Theme">
@@ -131,11 +140,17 @@ $catNames = [ordered]@{ read = 'Reading'; edit = 'Editing'; run = 'Running'; ren
       <StackPanel>
         <DockPanel LastChildFill="True">
           <Ellipse x:Name="Dot" Width="9" Height="9" Fill="{DynamicResource Done}" Margin="0,0,8,0" VerticalAlignment="Center" DockPanel.Dock="Left"/>
-          <TextBlock x:Name="MinBtn" DockPanel.Dock="Right" Text="&#xE921;" FontFamily="Segoe MDL2 Assets" FontSize="10" Foreground="{DynamicResource TextMuted}" Padding="7,4,2,4" Margin="6,0,0,0" VerticalAlignment="Center" Cursor="Hand" ToolTip="Minimize" Background="Transparent"/>
+          <!-- 24px target with a soft hover highlight. -->
+          <Border x:Name="MinHit" DockPanel.Dock="Right" Width="24" Height="24" CornerRadius="6" Margin="6,-4,-6,-4" VerticalAlignment="Center" Cursor="Hand" ToolTip="Minimize" Background="Transparent">
+            <Grid>
+              <Border x:Name="MinHover" CornerRadius="6" Background="{DynamicResource Track}" Opacity="0"/>
+              <TextBlock x:Name="MinBtn" Text="&#xE921;" FontFamily="Segoe MDL2 Assets" FontSize="10" Foreground="{DynamicResource TextMuted}" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+            </Grid>
+          </Border>
           <Border x:Name="Badge" DockPanel.Dock="Right" CornerRadius="8" Padding="8,1" Margin="8,0,0,0" VerticalAlignment="Center" Background="{DynamicResource BadgeBg}" BorderBrush="{DynamicResource Accent}" BorderThickness="1">
             <TextBlock x:Name="BadgeText" Foreground="{DynamicResource Accent}" FontFamily="Segoe UI" FontSize="10" FontWeight="Bold"/>
           </Border>
-          <TextBlock x:Name="Count" DockPanel.Dock="Right" Foreground="{DynamicResource TextMuted}" FontFamily="Segoe UI" FontSize="11" VerticalAlignment="Center"/>
+          <TextBlock x:Name="Count" DockPanel.Dock="Right" Typography.NumeralAlignment="Tabular" Foreground="{DynamicResource TextMuted}" FontFamily="Segoe UI" FontSize="11" VerticalAlignment="Center"/>
           <TextBlock x:Name="Title" Foreground="{DynamicResource TextMain}" FontFamily="Segoe UI" FontSize="13" FontWeight="SemiBold" VerticalAlignment="Center" TextTrimming="CharacterEllipsis"/>
         </DockPanel>
         <!-- Shown only when minimized: the first working chat's whole-job progress. -->
@@ -158,7 +173,7 @@ $cardXaml = @'
   <StackPanel>
     <DockPanel LastChildFill="True">
       <Ellipse x:Name="Dot" Width="7" Height="7" Fill="{DynamicResource Accent}" Margin="0,0,7,0" VerticalAlignment="Center" DockPanel.Dock="Left"/>
-      <TextBlock x:Name="Clock" DockPanel.Dock="Right" Foreground="{DynamicResource TextMain}" FontFamily="Segoe UI" FontSize="12.5" FontWeight="SemiBold" VerticalAlignment="Center" Margin="8,0,0,0"/>
+      <TextBlock x:Name="Clock" DockPanel.Dock="Right" Typography.NumeralAlignment="Tabular" MinWidth="46" TextAlignment="Right" Foreground="{DynamicResource TextMain}" FontFamily="Segoe UI" FontSize="12.5" FontWeight="SemiBold" VerticalAlignment="Center" Margin="8,0,0,0"/>
       <TextBlock x:Name="Chat" Foreground="{DynamicResource TextSub}" FontFamily="Segoe UI" FontSize="11.5" VerticalAlignment="Center" TextTrimming="CharacterEllipsis"/>
     </DockPanel>
 
@@ -169,28 +184,28 @@ $cardXaml = @'
 
     <StackPanel Margin="0,9,0,0">
       <DockPanel>
-        <TextBlock x:Name="TurnPct" DockPanel.Dock="Right" Foreground="{DynamicResource TextMain}" FontFamily="Segoe UI" FontSize="11" FontWeight="SemiBold"/>
+        <TextBlock x:Name="TurnPct" DockPanel.Dock="Right" Typography.NumeralAlignment="Tabular" MinWidth="34" TextAlignment="Right" Foreground="{DynamicResource TextMain}" FontFamily="Segoe UI" FontSize="11" FontWeight="SemiBold"/>
         <TextBlock Text="WHOLE JOB" Foreground="{DynamicResource TextMuted}" FontFamily="Segoe UI" FontSize="10" FontWeight="SemiBold"/>
       </DockPanel>
       <Border CornerRadius="5" Background="{DynamicResource Track}" Height="12" Margin="0,4,0,0">
         <Canvas x:Name="Seg" Height="12"/>
       </Border>
-      <TextBlock x:Name="TurnText" Foreground="{DynamicResource TextSub}" FontFamily="Segoe UI" FontSize="11.5" Margin="0,5,0,0" TextWrapping="Wrap"/>
+      <TextBlock x:Name="TurnText" Typography.NumeralAlignment="Tabular" LineHeight="17" LineStackingStrategy="BlockLineHeight" Foreground="{DynamicResource TextSub}" FontFamily="Segoe UI" FontSize="11.5" Margin="0,5,0,0" TextWrapping="Wrap"/>
     </StackPanel>
 
     <StackPanel x:Name="StepPanel" Margin="0,9,0,0">
       <DockPanel>
-        <TextBlock x:Name="StepPct" DockPanel.Dock="Right" Foreground="{DynamicResource TextMain}" FontFamily="Segoe UI" FontSize="11" FontWeight="SemiBold"/>
+        <TextBlock x:Name="StepPct" DockPanel.Dock="Right" Typography.NumeralAlignment="Tabular" MinWidth="34" TextAlignment="Right" Foreground="{DynamicResource TextMain}" FontFamily="Segoe UI" FontSize="11" FontWeight="SemiBold"/>
         <TextBlock x:Name="StepHead" Text="THIS STEP" Foreground="{DynamicResource TextMuted}" FontFamily="Segoe UI" FontSize="10" FontWeight="SemiBold"/>
       </DockPanel>
       <Border x:Name="StepTrack" CornerRadius="3.5" Background="{DynamicResource Track}" Height="7" Margin="0,4,0,0">
         <Border x:Name="StepFill" CornerRadius="3.5" HorizontalAlignment="Left" Width="0"/>
       </Border>
-      <TextBlock x:Name="StepText" Foreground="{DynamicResource TextSub}" FontFamily="Segoe UI" FontSize="11.5" Margin="0,4,0,0" TextWrapping="Wrap"/>
+      <TextBlock x:Name="StepText" Typography.NumeralAlignment="Tabular" LineHeight="17" LineStackingStrategy="BlockLineHeight" Foreground="{DynamicResource TextSub}" FontFamily="Segoe UI" FontSize="11.5" Margin="0,4,0,0" TextWrapping="Wrap"/>
     </StackPanel>
 
     <Border x:Name="Notice" CornerRadius="7" Background="{DynamicResource NoticeBg}" Padding="8,5" Margin="0,8,0,0" Visibility="Collapsed">
-      <TextBlock x:Name="NoticeText" Foreground="{DynamicResource NoticeText}" FontFamily="Segoe UI" FontSize="11.5" TextWrapping="Wrap"/>
+      <TextBlock x:Name="NoticeText" LineHeight="17" LineStackingStrategy="BlockLineHeight" Foreground="{DynamicResource NoticeText}" FontFamily="Segoe UI" FontSize="11.5" TextWrapping="Wrap"/>
     </Border>
 
     <StackPanel x:Name="DetailPanel" Margin="0,10,0,0">
@@ -206,7 +221,7 @@ $cardNames = 'Dot','Clock','Chat','NowPanel','NowLabel','NowDetail','TurnPct','S
 $window = [Windows.Markup.XamlReader]::Load((New-Object System.Xml.XmlNodeReader $windowXaml))
 $ui = @{}
 foreach ($n in 'Shell','GlowLayer','Glow','ModeSaver','ModeNeutral','ModeFull','Zoom','Badge','BadgeText','ThemeNormal','ThemeDADA','ThemeRen','Size75','Size100','Size125','Size150',
-               'Dot','Count','Title','Sessions','Legend','MinBtn','MiniTrack','MiniFill','MenuMini','MenuDetails','MenuHideIdle','MenuSound','MenuReset','MenuExit') {
+               'Dot','Count','Title','Sessions','Legend','MinHit','MinHover','MinBtn','MiniTrack','MiniFill','MenuMini','MenuDetails','MenuHideIdle','MenuSound','MenuReset','MenuExit') {
   $ui[$n] = $window.FindName($n)
 }
 
@@ -293,6 +308,7 @@ if ($Theme) { $prefs.theme = $Theme }
 if ($Mode) { $prefs.mode = $Mode }
 if ($Snapshot) { $prefs.scale = 1.0; $prefs.details = $true; $prefs.hideIdle = $false; $prefs.left = -10000; $prefs.top = -10000 }
 function Save-Prefs {
+  if ($Demo -or $Snapshot) { return }   # the demo and previews never change your saved settings
   if ($window.IsLoaded) { $prefs.left = $window.Left; $prefs.top = $window.Top }
   $prefs | ConvertTo-Json | Set-Content -Path $prefsFile -Encoding utf8
 }
@@ -343,19 +359,42 @@ $ui.MenuReset.Add_Click({ Move-ToCorner; Save-Prefs })
 $ui.MenuExit.Add_Click({ $window.Close() })
 # Minimize: shrink to a slim bar (status, time left, a thin progress line). The window has no
 # taskbar button, so a real minimize would make it vanish.
+# Origin-aware: the window is anchored at its right edge, so it shrinks toward the button you clicked,
+# and the full view folds down into the slim bar (width and height morph together). Restore unfolds
+# from the same corner.
+function Write-UiError($err) {
+  try { Add-Content -Path (Join-Path $root 'window-errors.log') -Value "$(Get-Date -Format s) $($err.Exception.Message) @ line $($err.InvocationInfo.ScriptLineNumber)" } catch {}
+}
 function Set-Mini([bool]$on, [bool]$save = $true) {
+  $morph = $save -and $script:perf.anim -and -not $Snapshot -and $window.IsLoaded
+  $oldW = $ui.Shell.ActualWidth; $oldH = $ui.Shell.ActualHeight
   $prefs.mini = $on
   $ui.MenuMini.IsChecked = $on
   $ui.MinBtn.Text = if ($on) { [string][char]0xE923 } else { [string][char]0xE921 }
-  $ui.MinBtn.ToolTip = if ($on) { 'Restore' } else { 'Minimize' }
-  $ui.Shell.Width = if ($on) { 330 } else { 440 }
+  $ui.MinHit.ToolTip = if ($on) { 'Restore' } else { 'Minimize' }
+  $newW = if ($on) { 330 } else { 440 }
+  # (Set-Mini also runs at startup, before the motion section defines $P_Width / $P_Height.)
+  $ui.Shell.BeginAnimation([System.Windows.FrameworkElement]::WidthProperty, $null)
+  $ui.Shell.BeginAnimation([System.Windows.FrameworkElement]::HeightProperty, $null)
+  $ui.Shell.Width = $newW
   if ($save) { Save-Prefs; try { Update-View } catch {} }
+  if ($morph) {
+    $ui.Shell.Measure((New-Object System.Windows.Size($newW, [double]::PositiveInfinity)))
+    $newH = $ui.Shell.DesiredSize.Height
+    $ui.Shell.ClipToBounds = $true
+    Set-PropAnim $ui.Shell $P_Width $oldW $newW 300 $true
+    Set-PropAnim $ui.Shell $P_Height $oldH $newH 300 $true
+    if (-not $on) { $ui.Sessions.BeginAnimation($P_Opacity, $null); $ui.Sessions.Opacity = 0; Move-To $ui.Sessions $P_Opacity 1 300 }
+  }
 }
-$ui.MinBtn.Add_MouseLeftButtonDown({ param($sender, $ev) $ev.Handled = $true; Set-Mini (-not $prefs.mini) })
-$ui.MenuMini.Add_Click({ Set-Mini ([bool]$ui.MenuMini.IsChecked) })
+# Affordance: a soft highlight under the button while the pointer is over it (150ms ease).
+$ui.MinHit.Add_MouseEnter({ Move-To $ui.MinHover $P_Opacity 1 150; $ui.MinBtn.Foreground = $script:T.text })
+$ui.MinHit.Add_MouseLeave({ Move-To $ui.MinHover $P_Opacity 0 150; $ui.MinBtn.Foreground = $script:T.muted })
+$ui.MinHit.Add_MouseLeftButtonDown({ param($sender, $ev) $ev.Handled = $true; try { Set-Mini (-not $prefs.mini) } catch { Write-UiError $_ } })
+$ui.MenuMini.Add_Click({ try { Set-Mini ([bool]$ui.MenuMini.IsChecked) } catch { Write-UiError $_ } })
 $ui.Shell.Add_MouseLeftButtonDown({
   param($sender, $ev)
-  if ($ev.ClickCount -eq 2) { Set-Mini (-not $prefs.mini); return }
+  if ($ev.ClickCount -eq 2) { try { Set-Mini (-not $prefs.mini) } catch { Write-UiError $_ }; return }
   try { $window.DragMove(); Save-Prefs } catch {}
 })
 if (-not $Snapshot) { Set-Mini ([bool]$prefs.mini) $false }
@@ -397,7 +436,7 @@ $P_X = [System.Windows.Media.TranslateTransform]::XProperty
 $P_Y = [System.Windows.Media.TranslateTransform]::YProperty
 
 # Animates one property from wherever it is now. 'linear' for steady progress, 'out' for state changes.
-function Move-To($target, $prop, [double]$to, [int]$ms, [string]$ease = 'out') {
+function Move-To($target, $prop, [double]$to, [int]$ms, [string]$ease = 'out', [int]$delay = 0) {
   if ($Snapshot -or $ms -le 0 -or -not $script:perf.anim) { $target.BeginAnimation($prop, $null); $target.SetValue($prop, $to); return }
   if ($ease -eq 'linear') {
     $a = New-Object System.Windows.Media.Animation.DoubleAnimation
@@ -409,16 +448,17 @@ function Move-To($target, $prop, [double]$to, [int]$ms, [string]$ease = 'out') {
     [void]$a.KeyFrames.Add((New-Object System.Windows.Media.Animation.SplineDoubleKeyFrame($to, $kt, $easeOut)))
   }
   [System.Windows.Media.Animation.Timeline]::SetDesiredFrameRate($a, $script:perf.fps)
+  if ($delay -gt 0) { $a.BeginTime = [TimeSpan]::FromMilliseconds($delay) }
   $target.BeginAnimation($prop, $a)
 }
 
 # Fade in, rising $rise pixels (cards, notices). 220ms ease-out.
-function Show-Element($el, [double]$rise) {
+function Show-Element($el, [double]$rise, [int]$delay = 0) {
   $el.BeginAnimation($P_Opacity, $null); $el.Opacity = 0
-  Move-To $el $P_Opacity 1 220
+  Move-To $el $P_Opacity 1 220 'out' $delay
   if ($el.RenderTransform -is [System.Windows.Media.TranslateTransform]) {
     $tt = $el.RenderTransform
-    if ($script:reduce -or $rise -eq 0) { Move-To $tt $P_Y 0 0 } else { $tt.BeginAnimation($P_Y, $null); $tt.Y = $rise; Move-To $tt $P_Y 0 220 }
+    if ($script:reduce -or $rise -eq 0) { Move-To $tt $P_Y 0 0 } else { $tt.BeginAnimation($P_Y, $null); $tt.Y = $rise; Move-To $tt $P_Y 0 220 'out' $delay }
   }
 }
 
@@ -432,14 +472,19 @@ $P_Height = [System.Windows.FrameworkElement]::HeightProperty
 $script:folding = @{}
 
 # Animates Height from -> to. $release: hand back to automatic height when done.
-function Set-HeightAnim($el, [double]$from, [double]$to, [int]$ms, [bool]$release) {
+function Set-HeightAnim($el, [double]$from, [double]$to, [int]$ms, [bool]$release, [int]$delay = 0) {
+  Set-PropAnim $el $P_Height $from $to $ms $release $delay
+}
+# Animates any size property from -> to with the strong ease-out, optionally after a delay (stagger).
+function Set-PropAnim($el, $prop, [double]$from, [double]$to, [int]$ms, [bool]$release, [int]$delay = 0) {
   $a = New-Object System.Windows.Media.Animation.DoubleAnimationUsingKeyFrames
+  if ($delay -gt 0) { $a.BeginTime = [TimeSpan]::FromMilliseconds($delay) }
   [void]$a.KeyFrames.Add((New-Object System.Windows.Media.Animation.DiscreteDoubleKeyFrame($from, [System.Windows.Media.Animation.KeyTime]::FromTimeSpan([TimeSpan]::Zero))))
   $kt = [System.Windows.Media.Animation.KeyTime]::FromTimeSpan([TimeSpan]::FromMilliseconds($ms))
   [void]$a.KeyFrames.Add((New-Object System.Windows.Media.Animation.SplineDoubleKeyFrame($to, $kt, $easeOut)))
   if ($release) { $a.FillBehavior = [System.Windows.Media.Animation.FillBehavior]::Stop }
   [System.Windows.Media.Animation.Timeline]::SetDesiredFrameRate($a, $script:perf.fps)
-  $el.BeginAnimation($P_Height, $a)
+  $el.BeginAnimation($prop, $a)
 }
 
 # Height the element wants at its parent's width (without its margin).
@@ -512,6 +557,19 @@ function Set-StepFill($card, $pct, $pctAhead) {
   }
 }
 
+# ---------- text that wraps well ----------
+# Status lines are phrases joined by "  ·  ". Each phrase is kept whole (non-breaking spaces), so a
+# line only ever wraps between phrases: no "(usually" on one line and "59s)" alone on the next.
+$NBSP = [string][char]0xA0
+function Join-Phrases([string]$s) { (($s -split '  ·  ') | ForEach-Object { $_.Trim() -replace ' ', $NBSP }) -join '  ·  ' }
+# Sentences: keep (bracketed bits) whole and never leave the last word alone on a line.
+function Format-NoWidow([string]$s) {
+  $s = [regex]::Replace($s, '([^)]*)', [System.Text.RegularExpressions.MatchEvaluator]{ param($m) $m.Value -replace ' ', $NBSP })
+  $i = $s.LastIndexOf(' ')
+  if ($i -gt 0) { $s = $s.Substring(0, $i) + $NBSP + $s.Substring($i + 1) }
+  return $s
+}
+
 # Adaptive estimates, kept per step id / turn id while the window runs.
 $script:est = @{}
 # Returns the current estimate (ms) for an id, raising it when the work runs past it.
@@ -525,7 +583,7 @@ function Get-Estimate($card, [string]$id, [double]$spent, $base, [string]$label,
     $e.bumps++
     if ($label) {
       $card.noticeInfo = @{
-        text  = ('↻ {0} is taking longer than usual (it usually takes {3}). Added +{1} to it; new estimate about {2} left.' -f $label, (Format-Ms ($e.value - $old)), (Format-Ms ($e.value - $spent)), (Format-Ms $e.original))
+        text  = (Format-NoWidow ('↻ {0} is running long (usually {3}). Added +{1}, about {2} left now.' -f $label, (Format-Ms ($e.value - $old)), (Format-Ms ($e.value - $spent)), (Format-Ms $e.original)))
         until = $now + 7000
       }
     }
@@ -626,6 +684,7 @@ function Draw-Activity($card, $rows, [int]$max) {
     for ($i = 0; $i -lt $show.Count; $i++) { $card.durs[$i].Text = & $durText $show[$i] }
     return
   }
+  $firstBuild = -not $card.actSig
   $newTop = ($card.actSig -and $show.Count -gt 0 -and [double]$show[0].start -ne $card.actTop)
   $card.actSig = $sig
   $card.actTop = if ($show.Count -gt 0) { [double]$show[0].start } else { 0 }
@@ -646,7 +705,7 @@ function Draw-Activity($card, $rows, [int]$max) {
     $txt.Foreground = if ($row.live) { $script:T.text } else { $script:T.sub }
     $txt.Text = if ($row.detail) { "$($row.label)  ·  $($row.detail)" } else { $row.label }
     $dur = New-Object System.Windows.Controls.TextBlock
-    $dur.FontFamily = 'Consolas'; $dur.FontSize = 11; $dur.Margin = '8,0,0,0'; $dur.VerticalAlignment = 'Center'
+    $dur.FontFamily = 'Segoe UI'; $dur.FontSize = 11; [System.Windows.Documents.Typography]::SetNumeralAlignment($dur, 'Tabular'); $dur.MinWidth = 64; $dur.TextAlignment = 'Right'; $dur.Margin = '8,0,0,0'; $dur.VerticalAlignment = 'Center'
     $dur.Foreground = $script:T.muted
     $dur.Text = & $durText $row
     [void]$card.durs.Add($dur)
@@ -655,6 +714,10 @@ function Draw-Activity($card, $rows, [int]$max) {
     [void]$card.Activity.Children.Add($g)
   }
   if ($newTop -and $card.Activity.Children.Count -gt 0) { Show-Element $card.Activity.Children[0] 0 }
+  # Stagger: on a card's first appearance its rows fade in one after another, 40ms apart.
+  if ($firstBuild -and $script:perf.anim -and -not $Snapshot) {
+    for ($r = 0; $r -lt $card.Activity.Children.Count; $r++) { Show-Element $card.Activity.Children[$r] 3 (120 + $r * 40) }
+  }
   $card.DetailPanel.Visibility = if ($prefs.details -and $show.Count -gt 0) { 'Visible' } else { 'Collapsed' }
 }
 
@@ -683,7 +746,7 @@ function Update-ActiveCard($card, $sid, $s, [double]$now, [int]$maxRows) {
     $stepEst = Get-Estimate $card $st.id $stepSpent $st.base $st.label $now
     if ($null -eq $stepEst) {
       Set-StepFill $card $null $null; $card.StepPct.Text = ''
-      $card.StepText.Text = ('{0} elapsed  ·  first time timing this kind of step, no estimate yet' -f (Format-Ms $stepSpent))
+      $card.StepText.Text = Join-Phrases ('{0} elapsed  ·  first time for this kind of step  ·  learning' -f (Format-Ms $stepSpent))
     } else {
       $pct = [math]::Min(99, $stepSpent / $stepEst * 100)
       $pctAhead = [math]::Min(99, ($stepSpent + $LEAD) / $stepEst * 100)
@@ -692,7 +755,7 @@ function Update-ActiveCard($card, $sid, $s, [double]$now, [int]$maxRows) {
       $stepRemaining = $stepEst - $stepSpent
       $e = $script:est[$st.id]
       $extra = if ($e.bumps -gt 0) { ('  ·  re-estimated {0}x (usually {1})' -f $e.bumps, (Format-Ms $e.original)) } else { ('  ·  usually {0}' -f (Format-Ms $e.original)) }
-      $card.StepText.Text = ('{0} elapsed  ·  about {1} left{2}' -f (Format-Ms $stepSpent), (Format-Ms $stepRemaining), $extra)
+      $card.StepText.Text = Join-Phrases ('{0} elapsed  ·  about {1} left{2}' -f (Format-Ms $stepSpent), (Format-Ms $stepRemaining), $extra)
     }
   } else {
     $card.NowLabel.Text = 'Thinking / writing the reply'
@@ -715,7 +778,7 @@ function Update-ActiveCard($card, $sid, $s, [double]$now, [int]$maxRows) {
     $card.lastScale = 0
     $card.jobPct = $null; $card.jobPctAhead = $null; $card.jobLeft = $null; $card.jobSpent = $spent
     $card.TurnPct.Text = ''
-    $card.TurnText.Text = ('{0} elapsed  ·  {1} steps done  ·  no estimate for the whole job yet (it learns from each finished job)' -f (Format-Ms $spent), (Get-List $s.log).Count)
+    $card.TurnText.Text = Join-Phrases ('{0} elapsed  ·  {1} steps done  ·  no estimate yet, it learns from each job' -f (Format-Ms $spent), (Get-List $s.log).Count)
   } else {
     $bump = ($card.lastScale -gt 0 -and $turnEst -gt $card.lastScale * 1.02)
     Draw-Segments $card $tl.segs $t0 $turnEst $now $bump
@@ -725,7 +788,7 @@ function Update-ActiveCard($card, $sid, $s, [double]$now, [int]$maxRows) {
     $card.TurnPct.Text = ('{0}%' -f [math]::Floor($pct))
     $te = $script:est[$turnKey]
     $note = if ($te.bumps -gt 0 -or $turnEst -gt $te.original + 1000) { ('  ·  re-estimated (usually {0})' -f (Format-Ms $te.original)) } else { '' }
-    $card.TurnText.Text = ('{0} elapsed  ·  about {1} left  ·  {2} steps done{3}' -f (Format-Ms $spent), (Format-Ms ($turnEst - $spent)), (Get-List $s.log).Count, $note)
+    $card.TurnText.Text = Join-Phrases ('{0} elapsed  ·  about {1} left  ·  {2} steps done{3}' -f (Format-Ms $spent), (Format-Ms ($turnEst - $spent)), (Get-List $s.log).Count, $note)
   }
   Draw-Activity $card $tl.rows $maxRows
 
@@ -759,7 +822,7 @@ function Update-FinishedCard($card, $s, [double]$now, [int]$maxRows) {
   Draw-Segments $card $tl.segs $t0 ([math]::Max($t1 - $t0, 1000))
   $card.TurnPct.Text = '100%'
   $fails = @((Get-List $s.log) | Where-Object { $_.ok -eq $false }).Count
-  $card.TurnText.Text = ('Took {0}  ·  {1} steps{2}' -f (Format-Ms ($t1 - $t0)), (Get-List $s.log).Count, $(if ($fails) { "  ·  $fails failed" } else { '' }))
+  $card.TurnText.Text = Join-Phrases ('Took {0}  ·  {1} steps{2}' -f (Format-Ms ($t1 - $t0)), (Get-List $s.log).Count, $(if ($fails) { "  ·  $fails failed" } else { '' }))
   Draw-Activity $card $tl.rows $maxRows
 }
 
@@ -827,9 +890,12 @@ function Update-View {
     foreach ($id in $order) { [void]$ui.Sessions.Children.Add($script:cards[$id].root) }
     $script:order = $orderKey
   }
+  # Stagger: cards that appear together fade in 60ms apart; their space opens at once, so nothing jumps.
+  $nth = 0
   foreach ($id in $entering) {
     $root = $script:cards[$id].root
-    Show-Element $root 6
+    Show-Element $root 6 ($nth * 60)
+    $nth++
     # Grow the new card open, so the window extends smoothly instead of jumping.
     if ($script:perf.anim -and -not $Snapshot) {
       $root.ClipToBounds = $true
@@ -985,6 +1051,20 @@ $firstTrim = New-Object System.Windows.Threading.DispatcherTimer
 $firstTrim.Interval = [TimeSpan]::FromSeconds(5)
 $firstTrim.Add_Tick({ $firstTrim.Stop(); if ($script:perf.trim -gt 0) { try { Invoke-Trim } catch {} } })
 $firstTrim.Start()
+
+# The demo also shows minimize: it folds down at ~22s and opens back up at ~27s.
+if ($Demo) {
+  $script:demoStep = 0
+  $demoTimer = New-Object System.Windows.Threading.DispatcherTimer
+  $demoTimer.Interval = [TimeSpan]::FromSeconds(22)
+  $demoTimer.Add_Tick({
+    try {
+      if ($script:demoStep -eq 0) { Set-Mini $true; $demoTimer.Interval = [TimeSpan]::FromSeconds(5); $script:demoStep = 1 }
+      else { Set-Mini $false; $demoTimer.Stop() }
+    } catch { Write-UiError $_; $demoTimer.Stop() }
+  })
+  $demoTimer.Start()
+}
 
 $window.Add_Loaded({
   if ($null -ne $prefs.left -and $null -ne $prefs.top) { $window.Left = $prefs.left; $window.Top = $prefs.top } else { Move-ToCorner }

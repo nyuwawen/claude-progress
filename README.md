@@ -38,8 +38,9 @@ See what Claude is doing right now, where the time went, and roughly how long is
 | 🗂️ **One card per chat** | Every Claude chat that's working gets its own progress card, labelled with its folder and your message. |
 | ✅ **Activity list** | Each step with ✓ or ✗, how long it took, and what's running now. |
 | 🎨 **Themes, sizes, modes** | Normal, DADA and REN themes · Small to Extra large (or Ctrl + scroll) · Saver, Neutral and Full power. |
-| ➖ **Minimize** | Shrink it to a slim bar with the percent, time left and a thin progress line. |
-| 🌊 **Smooth motion** | Bars glide continuously, and new steps, notices and chats grow open instead of popping in. |
+| ➖ **Minimize** | Folds down into a slim bar toward the button you clicked, with the percent, time left and a thin progress line. |
+| 🌊 **Smooth motion** | Bars glide continuously; new steps, notices and chats grow open and enter in a gentle stagger instead of popping in. |
+| 🔢 **Calm numbers** | Fixed-width digits, so timers and percentages count without wobbling, and status lines never strand a lone word. |
 | 🔒 **Private** | Everything stays on your computer. Nothing is sent anywhere. |
 
 ## 🎨 Themes
