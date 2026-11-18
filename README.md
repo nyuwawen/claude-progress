@@ -38,6 +38,8 @@ See what Claude is doing right now, where the time went, and roughly how long is
 | 🗂️ **One card per chat** | Every Claude chat that's working gets its own progress card, labelled with its folder and your message. |
 | ✅ **Activity list** | Each step with ✓ or ✗, how long it took, and what's running now. |
 | 🎨 **Themes, sizes, modes** | Normal, DADA and REN themes · Small to Extra large (or Ctrl + scroll) · Saver, Neutral and Full power. |
+| ➖ **Minimize** | Shrink it to a slim bar with the percent, time left and a thin progress line. |
+| 🌊 **Smooth motion** | Bars glide continuously, and new steps, notices and chats grow open instead of popping in. |
 | 🔒 **Private** | Everything stays on your computer. Nothing is sent anywhere. |
 
 ## 🎨 Themes
@@ -68,12 +70,17 @@ Right-click the window for everything. Drag it anywhere; it remembers its place 
 
 | Menu | Choices |
 | --- | --- |
+| **Minimize** | slim bar mode (also the **–** button, or double-click the window) |
 | **Theme** | Normal · DADA · REN |
 | **Performance** | Saver · Neutral · Full power |
 | **Size** | Small · Medium · Large · Extra large (or hold **Ctrl** and scroll) |
 | **Show activity details** | the step list and colour legend |
 | **Hide when Claude is idle** | only show the window while Claude works |
 | **Sound when a long job finishes** | a chime after jobs longer than 30 seconds |
+
+### Minimized
+
+<img src="screenshots/minimized.png" alt="Minimized slim bar" width="420">
 
 ### Performance modes
 

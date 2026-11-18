@@ -119,6 +119,7 @@ $catNames = [ordered]@{ read = 'Reading'; edit = 'Editing'; run = 'Running'; ren
             <MenuItem x:Name="Size150" Header="Extra large" IsCheckable="True"/>
           </MenuItem>
           <Separator/>
+          <MenuItem x:Name="MenuMini" Header="Minimize  (or double-click)" IsCheckable="True"/>
           <MenuItem x:Name="MenuDetails" Header="Show activity details" IsCheckable="True"/>
           <MenuItem x:Name="MenuHideIdle" Header="Hide when Claude is idle" IsCheckable="True"/>
           <MenuItem x:Name="MenuSound" Header="Sound when a long job finishes" IsCheckable="True"/>
@@ -130,12 +131,17 @@ $catNames = [ordered]@{ read = 'Reading'; edit = 'Editing'; run = 'Running'; ren
       <StackPanel>
         <DockPanel LastChildFill="True">
           <Ellipse x:Name="Dot" Width="9" Height="9" Fill="{DynamicResource Done}" Margin="0,0,8,0" VerticalAlignment="Center" DockPanel.Dock="Left"/>
+          <TextBlock x:Name="MinBtn" DockPanel.Dock="Right" Text="&#xE921;" FontFamily="Segoe MDL2 Assets" FontSize="10" Foreground="{DynamicResource TextMuted}" Padding="7,4,2,4" Margin="6,0,0,0" VerticalAlignment="Center" Cursor="Hand" ToolTip="Minimize" Background="Transparent"/>
           <Border x:Name="Badge" DockPanel.Dock="Right" CornerRadius="8" Padding="8,1" Margin="8,0,0,0" VerticalAlignment="Center" Background="{DynamicResource BadgeBg}" BorderBrush="{DynamicResource Accent}" BorderThickness="1">
             <TextBlock x:Name="BadgeText" Foreground="{DynamicResource Accent}" FontFamily="Segoe UI" FontSize="10" FontWeight="Bold"/>
           </Border>
           <TextBlock x:Name="Count" DockPanel.Dock="Right" Foreground="{DynamicResource TextMuted}" FontFamily="Segoe UI" FontSize="11" VerticalAlignment="Center"/>
           <TextBlock x:Name="Title" Foreground="{DynamicResource TextMain}" FontFamily="Segoe UI" FontSize="13" FontWeight="SemiBold" VerticalAlignment="Center" TextTrimming="CharacterEllipsis"/>
         </DockPanel>
+        <!-- Shown only when minimized: the first working chat's whole-job progress. -->
+        <Border x:Name="MiniTrack" Height="5" CornerRadius="2.5" Margin="0,9,0,1" Background="{DynamicResource Track}" Visibility="Collapsed">
+          <Border x:Name="MiniFill" CornerRadius="2.5" HorizontalAlignment="Left" Width="0" Background="{DynamicResource Accent}"/>
+        </Border>
         <StackPanel x:Name="Sessions"/>
         <WrapPanel x:Name="Legend" Margin="0,8,0,0"/>
       </StackPanel>
@@ -200,7 +206,7 @@ $cardNames = 'Dot','Clock','Chat','NowPanel','NowLabel','NowDetail','TurnPct','S
 $window = [Windows.Markup.XamlReader]::Load((New-Object System.Xml.XmlNodeReader $windowXaml))
 $ui = @{}
 foreach ($n in 'Shell','GlowLayer','Glow','ModeSaver','ModeNeutral','ModeFull','Zoom','Badge','BadgeText','ThemeNormal','ThemeDADA','ThemeRen','Size75','Size100','Size125','Size150',
-               'Dot','Count','Title','Sessions','Legend','MenuDetails','MenuHideIdle','MenuSound','MenuReset','MenuExit') {
+               'Dot','Count','Title','Sessions','Legend','MinBtn','MiniTrack','MiniFill','MenuMini','MenuDetails','MenuHideIdle','MenuSound','MenuReset','MenuExit') {
   $ui[$n] = $window.FindName($n)
 }
 
@@ -276,11 +282,11 @@ if ($SelfTest) {
 }
 
 # ---------- preferences ----------
-$prefs = @{ left = $null; top = $null; hideIdle = $false; sound = $true; details = $true; scale = 1.0; theme = 'Normal'; mode = 'Neutral' }
+$prefs = @{ left = $null; top = $null; hideIdle = $false; sound = $true; details = $true; scale = 1.0; theme = 'Normal'; mode = 'Neutral'; mini = $false }
 if (Test-Path $prefsFile) {
   try {
     $p = Get-Content $prefsFile -Raw | ConvertFrom-Json
-    foreach ($k in 'left','top','hideIdle','sound','details','scale','theme','mode') { if ($null -ne $p.$k) { $prefs[$k] = $p.$k } }
+    foreach ($k in 'left','top','hideIdle','sound','details','scale','theme','mode','mini') { if ($null -ne $p.$k) { $prefs[$k] = $p.$k } }
   } catch {}
 }
 if ($Theme) { $prefs.theme = $Theme }
@@ -335,7 +341,24 @@ $ui.MenuHideIdle.Add_Click({ $prefs.hideIdle = $ui.MenuHideIdle.IsChecked; Save-
 $ui.MenuSound.Add_Click({ $prefs.sound = $ui.MenuSound.IsChecked; Save-Prefs })
 $ui.MenuReset.Add_Click({ Move-ToCorner; Save-Prefs })
 $ui.MenuExit.Add_Click({ $window.Close() })
-$ui.Shell.Add_MouseLeftButtonDown({ try { $window.DragMove(); Save-Prefs } catch {} })
+# Minimize: shrink to a slim bar (status, time left, a thin progress line). The window has no
+# taskbar button, so a real minimize would make it vanish.
+function Set-Mini([bool]$on, [bool]$save = $true) {
+  $prefs.mini = $on
+  $ui.MenuMini.IsChecked = $on
+  $ui.MinBtn.Text = if ($on) { [string][char]0xE923 } else { [string][char]0xE921 }
+  $ui.MinBtn.ToolTip = if ($on) { 'Restore' } else { 'Minimize' }
+  $ui.Shell.Width = if ($on) { 330 } else { 440 }
+  if ($save) { Save-Prefs; try { Update-View } catch {} }
+}
+$ui.MinBtn.Add_MouseLeftButtonDown({ param($sender, $ev) $ev.Handled = $true; Set-Mini (-not $prefs.mini) })
+$ui.MenuMini.Add_Click({ Set-Mini ([bool]$ui.MenuMini.IsChecked) })
+$ui.Shell.Add_MouseLeftButtonDown({
+  param($sender, $ev)
+  if ($ev.ClickCount -eq 2) { Set-Mini (-not $prefs.mini); return }
+  try { $window.DragMove(); Save-Prefs } catch {}
+})
+if (-not $Snapshot) { Set-Mini ([bool]$prefs.mini) $false }
 # Keep the window on screen as cards come and go.
 $window.Add_SizeChanged({
   $wa = [System.Windows.SystemParameters]::WorkArea
@@ -401,6 +424,66 @@ function Show-Element($el, [double]$rise) {
 
 # Fills the step bar. Moving forward it glides linearly to where it will be a moment from now;
 # a re-estimate pulls it back with an ease-out. $null means no estimate yet: a gentle pulse.
+# ---------- reveal / fold ----------
+# Parts that appear (a step's bar, the notice, a detail line, a new card) grow open: height and
+# opacity animate together with the strong ease-out, so everything below slides down instead of
+# jumping. Parts that go away fold closed the same way, then collapse. Saver mode stays instant.
+$P_Height = [System.Windows.FrameworkElement]::HeightProperty
+$script:folding = @{}
+
+# Animates Height from -> to. $release: hand back to automatic height when done.
+function Set-HeightAnim($el, [double]$from, [double]$to, [int]$ms, [bool]$release) {
+  $a = New-Object System.Windows.Media.Animation.DoubleAnimationUsingKeyFrames
+  [void]$a.KeyFrames.Add((New-Object System.Windows.Media.Animation.DiscreteDoubleKeyFrame($from, [System.Windows.Media.Animation.KeyTime]::FromTimeSpan([TimeSpan]::Zero))))
+  $kt = [System.Windows.Media.Animation.KeyTime]::FromTimeSpan([TimeSpan]::FromMilliseconds($ms))
+  [void]$a.KeyFrames.Add((New-Object System.Windows.Media.Animation.SplineDoubleKeyFrame($to, $kt, $easeOut)))
+  if ($release) { $a.FillBehavior = [System.Windows.Media.Animation.FillBehavior]::Stop }
+  [System.Windows.Media.Animation.Timeline]::SetDesiredFrameRate($a, $script:perf.fps)
+  $el.BeginAnimation($P_Height, $a)
+}
+
+# Height the element wants at its parent's width (without its margin).
+function Get-NaturalHeight($el) {
+  $pw = 0; if ($el.Parent -is [System.Windows.FrameworkElement]) { $pw = $el.Parent.ActualWidth }
+  if ($pw -le 0) { $pw = 400 }
+  $el.Measure((New-Object System.Windows.Size($pw, [double]::PositiveInfinity)))
+  return [math]::Max(0, $el.DesiredSize.Height - $el.Margin.Top - $el.Margin.Bottom)
+}
+
+function Set-Shown($el, [bool]$show, [double]$now) {
+  $id = [System.Runtime.CompilerServices.RuntimeHelpers]::GetHashCode($el)
+  $folding = $script:folding.ContainsKey($id)
+  $instant = $Snapshot -or -not $script:perf.anim
+  if ($show) {
+    if ($el.Visibility -eq 'Visible' -and -not $folding) { return }
+    $from = if ($el.Visibility -eq 'Visible') { $el.ActualHeight } else { 0 }
+    if ($folding) { $script:folding.Remove($id) }
+    $el.Visibility = 'Visible'
+    $el.BeginAnimation($P_Height, $null)
+    if ($instant) { $el.BeginAnimation($P_Opacity, $null); $el.Opacity = 1; return }
+    $el.ClipToBounds = $true
+    $to = Get-NaturalHeight $el
+    if ($from -eq 0) { $el.BeginAnimation($P_Opacity, $null); $el.Opacity = 0 }
+    Set-HeightAnim $el $from $to 240 $true
+    Move-To $el $P_Opacity 1 240
+  } else {
+    if ($el.Visibility -ne 'Visible' -or $folding) { return }
+    if ($instant) { $el.Visibility = 'Collapsed'; return }
+    $el.ClipToBounds = $true
+    Set-HeightAnim $el $el.ActualHeight 0 180 $false
+    Move-To $el $P_Opacity 0 160
+    $script:folding[$id] = @{ el = $el; at = $now + 200 }
+  }
+}
+
+# Collapses parts whose fold has finished.
+function Complete-Folds([double]$now) {
+  foreach ($k in @($script:folding.Keys)) {
+    $f = $script:folding[$k]
+    if ($now -ge $f.at) { $f.el.Visibility = 'Collapsed'; $f.el.BeginAnimation($P_Height, $null); $script:folding.Remove($k) }
+  }
+}
+
 function Set-StepFill($card, $pct, $pctAhead) {
   $fill = $card.StepFill
   $w = $card.StepTrack.ActualWidth; if ($w -le 0) { $w = 384 }
@@ -593,8 +676,8 @@ function Update-ActiveCard($card, $sid, $s, [double]$now, [int]$maxRows) {
     $card.NowLabel.Text = if ($live.Count -gt 1) { "$($st.label)   (+$($live.Count - 1) more in parallel)" } else { $st.label }
     $card.NowLabel.Foreground = Get-CatBrush $st.cat
     $card.NowDetail.Text = $st.detail
-    $card.NowDetail.Visibility = if ($st.detail) { 'Visible' } else { 'Collapsed' }
-    $card.StepPanel.Visibility = 'Visible'
+    Set-Shown $card.NowDetail ([bool]$st.detail) $now
+    Set-Shown $card.StepPanel $true $now
     $card.StepFill.Background = Get-CatBrush $st.cat
     $card.StepHead.Text = 'THIS STEP  ·  ' + (Get-CatName $st.cat).ToUpper()
     $stepEst = Get-Estimate $card $st.id $stepSpent $st.base $st.label $now
@@ -614,8 +697,8 @@ function Update-ActiveCard($card, $sid, $s, [double]$now, [int]$maxRows) {
   } else {
     $card.NowLabel.Text = 'Thinking / writing the reply'
     $card.NowLabel.Foreground = $script:T.text
-    $card.NowDetail.Visibility = 'Collapsed'
-    $card.StepPanel.Visibility = 'Collapsed'
+    Set-Shown $card.NowDetail $false $now
+    Set-Shown $card.StepPanel $false $now
   }
   $card.NowPanel.Visibility = 'Visible'
 
@@ -630,6 +713,7 @@ function Update-ActiveCard($card, $sid, $s, [double]$now, [int]$maxRows) {
   if ($null -eq $turnEst) {
     Draw-Segments $card $tl.segs $t0 ([math]::Max(($spent + $LEAD) * 1.15, 1000)) $now
     $card.lastScale = 0
+    $card.jobPct = $null; $card.jobPctAhead = $null; $card.jobLeft = $null; $card.jobSpent = $spent
     $card.TurnPct.Text = ''
     $card.TurnText.Text = ('{0} elapsed  ·  {1} steps done  ·  no estimate for the whole job yet (it learns from each finished job)' -f (Format-Ms $spent), (Get-List $s.log).Count)
   } else {
@@ -637,6 +721,7 @@ function Update-ActiveCard($card, $sid, $s, [double]$now, [int]$maxRows) {
     Draw-Segments $card $tl.segs $t0 $turnEst $now $bump
     $card.lastScale = $turnEst
     $pct = [math]::Min(99, $spent / $turnEst * 100)
+    $card.jobPct = $pct; $card.jobPctAhead = [math]::Min(99, ($spent + $LEAD) / $turnEst * 100); $card.jobLeft = $turnEst - $spent; $card.jobSpent = $spent
     $card.TurnPct.Text = ('{0}%' -f [math]::Floor($pct))
     $te = $script:est[$turnKey]
     $note = if ($te.bumps -gt 0 -or $turnEst -gt $te.original + 1000) { ('  ·  re-estimated (usually {0})' -f (Format-Ms $te.original)) } else { '' }
@@ -644,15 +729,12 @@ function Update-ActiveCard($card, $sid, $s, [double]$now, [int]$maxRows) {
   }
   Draw-Activity $card $tl.rows $maxRows
 
-  # Notice: fades in (rising 4px), fades out after its time, then collapses.
+  # Notice: grows open while it applies, then folds away.
   if ($card.noticeInfo -and $now -lt $card.noticeInfo.until) {
     $card.NoticeText.Text = $card.noticeInfo.text
-    if ($card.Notice.Visibility -ne 'Visible' -or $card.noticeHideAt) {
-      $card.noticeHideAt = $null; $card.Notice.Visibility = 'Visible'; Show-Element $card.Notice 4
-    }
-  } elseif ($card.Notice.Visibility -eq 'Visible') {
-    if (-not $card.noticeHideAt) { Move-To $card.Notice $P_Opacity 0 200; $card.noticeHideAt = $now + 220 }
-    elseif ($now -ge $card.noticeHideAt) { $card.Notice.Visibility = 'Collapsed'; $card.noticeHideAt = $null }
+    Set-Shown $card.Notice $true $now
+  } else {
+    Set-Shown $card.Notice $false $now
   }
 
   if (-not $card.wasBusy) { $card.busySince = $now }
@@ -671,9 +753,9 @@ function Update-FinishedCard($card, $s, [double]$now, [int]$maxRows) {
   $card.NowPanel.Visibility = 'Visible'
   $card.NowLabel.Text = 'Finished'
   $card.NowLabel.Foreground = $script:T.done
-  $card.NowDetail.Visibility = 'Collapsed'
-  $card.StepPanel.Visibility = 'Collapsed'
-  $card.Notice.Visibility = 'Collapsed'
+  Set-Shown $card.NowDetail $false $now
+  Set-Shown $card.StepPanel $false $now
+  Set-Shown $card.Notice $false $now
   Draw-Segments $card $tl.segs $t0 ([math]::Max($t1 - $t0, 1000))
   $card.TurnPct.Text = '100%'
   $fails = @((Get-List $s.log) | Where-Object { $_.ok -eq $false }).Count
@@ -698,6 +780,7 @@ $script:cards = @{}
 $script:order = ''
 function Update-View {
   $now = [double][DateTimeOffset]::UtcNow.ToUnixTimeMilliseconds()
+  Complete-Folds $now
   $state = $null
   if (Test-Path $stateFile) { try { $state = Get-Content $stateFile -Raw -Encoding UTF8 | ConvertFrom-Json } catch { return } }
 
@@ -728,7 +811,9 @@ function Update-View {
     if ($ids -contains $k) { continue }
     $card = $script:cards[$k]
     if (-not $card.leaving) {
-      $card.leaving = $true; $card.removeAt = $now + 180
+      $card.leaving = $true; $card.removeAt = $now + 220
+      # Fold the card closed while it fades, so the cards below slide up.
+      if ($script:perf.anim -and -not $Snapshot) { $card.root.ClipToBounds = $true; Set-HeightAnim $card.root $card.root.ActualHeight 0 200 $false }
       Move-To $card.root $P_Opacity 0 160
     } elseif ($now -ge $card.removeAt) {
       $script:cards.Remove($k)
@@ -742,7 +827,16 @@ function Update-View {
     foreach ($id in $order) { [void]$ui.Sessions.Children.Add($script:cards[$id].root) }
     $script:order = $orderKey
   }
-  foreach ($id in $entering) { Show-Element $script:cards[$id].root 6 }
+  foreach ($id in $entering) {
+    $root = $script:cards[$id].root
+    Show-Element $root 6
+    # Grow the new card open, so the window extends smoothly instead of jumping.
+    if ($script:perf.anim -and -not $Snapshot) {
+      $root.ClipToBounds = $true
+      $root.BeginAnimation($P_Height, $null)
+      Set-HeightAnim $root 0 (Get-NaturalHeight $root) 280 $true
+    }
+  }
 
   # Header
   if ($active.Count -gt 0) {
@@ -757,8 +851,35 @@ function Update-View {
       elseif ($prefs.hideIdle) { 'Claude is idle  ·  I''ll appear when Claude works' }
       else { 'Claude is idle' }
   }
-  $ui.Count.Text = if ($shown.Count -gt 0) { "$($active.Count) working  ·  $($finished.Count) done" } else { '' }
-  $ui.Legend.Visibility = if ($shown.Count -gt 0 -and $prefs.details) { 'Visible' } else { 'Collapsed' }
+  if ($prefs.mini) {
+    # Minimized: header line + thin bar for the first working chat.
+    $ui.Sessions.Visibility = 'Collapsed'; $ui.Legend.Visibility = 'Collapsed'
+    $ui.Title.Text = if ($active.Count -gt 0) { 'Working' } elseif ($finished.Count -gt 0) { 'Finished' } else { 'Idle' }
+    $tw = $ui.MiniTrack.ActualWidth; if ($tw -le 0) { $tw = 300 }
+    $more = if ($active.Count -gt 1) { "$($active.Count) chats  ·  " } else { '' }
+    if ($active.Count -gt 0) {
+      $c = $script:cards[$active[0].id]
+      $ui.MiniTrack.Visibility = 'Visible'
+      if ($null -ne $c.jobPct) {
+        $ui.Count.Text = ('{0}{1}%  ·  ~{2} left' -f $more, [math]::Floor($c.jobPct), (Format-Ms $c.jobLeft))
+        Move-To $ui.MiniFill $P_Width ($tw * $c.jobPctAhead / 100) $LEAD 'linear'
+      } else {
+        $ui.Count.Text = ('{0}{1} elapsed  ·  learning' -f $more, (Format-Ms $c.jobSpent))
+        Move-To $ui.MiniFill $P_Width ($tw * 0.15) 250
+      }
+    } elseif ($finished.Count -gt 0) {
+      $ui.Count.Text = 'done'
+      $ui.MiniTrack.Visibility = 'Visible'
+      Move-To $ui.MiniFill $P_Width $tw 250
+    } else {
+      $ui.Count.Text = ''
+      $ui.MiniTrack.Visibility = 'Collapsed'
+    }
+  } else {
+    $ui.Sessions.Visibility = 'Visible'; $ui.MiniTrack.Visibility = 'Collapsed'
+    $ui.Count.Text = if ($shown.Count -gt 0) { "$($active.Count) working  ·  $($finished.Count) done" } else { '' }
+    $ui.Legend.Visibility = if ($shown.Count -gt 0 -and $prefs.details) { 'Visible' } else { 'Collapsed' }
+  }
   $justOpened = ($now - $script:startedAt) -lt $GRACE
   Set-WindowShown (-not ($shown.Count -eq 0 -and $prefs.hideIdle -and -not $Demo -and -not $justOpened)) $now
   if ($active.Count -eq 0) { $script:est = @{} }
@@ -804,19 +925,14 @@ if ($Snapshot) {
   $window.ShowActivated = $false
   $window.Show()
   $backdrop = New-Object System.Windows.Media.LinearGradientBrush((New-Color '#FF3A4150'), (New-Color '#FF1C2029'), 90.0)
-  foreach ($name in $themes.Keys) {
-    Set-Theme $name $false
+  foreach ($name in @($themes.Keys) + 'DADA-mini') {
+    if ($name -eq 'DADA-mini') { Set-Theme 'DADA' $false; Set-Mini $true $false } else { Set-Mini $false $false; Set-Theme $name $false }
     $script:est = @{}
-    foreach ($i in 1..2) { Update-View; $window.UpdateLayout() }
-    $el = $window.Content
-    $w = [math]::Ceiling($el.ActualWidth); $h = [math]::Ceiling($el.ActualHeight)
-    $dv = New-Object System.Windows.Media.DrawingVisual
-    $dc = $dv.RenderOpen()
-    # Transparent background, so the shots sit cleanly on light or dark pages.
-    $dc.DrawRectangle((New-Object System.Windows.Media.VisualBrush($el)), $null, (New-Object System.Windows.Rect(0, 0, $w, $h)))
-    $dc.Close()
+    foreach ($i in 1..3) { Update-View; $window.UpdateLayout() }
+    # The whole window, glow margin included, on a transparent background (sits cleanly on light or dark pages).
+    $w = [math]::Ceiling($window.ActualWidth); $h = [math]::Ceiling($window.ActualHeight)
     $rtb = New-Object System.Windows.Media.Imaging.RenderTargetBitmap(($w * 2), ($h * 2), 192, 192, [System.Windows.Media.PixelFormats]::Pbgra32)
-    $rtb.Render($dv)
+    $rtb.Render($window)
     $enc = New-Object System.Windows.Media.Imaging.PngBitmapEncoder
     $enc.Frames.Add([System.Windows.Media.Imaging.BitmapFrame]::Create($rtb))
     $out = Join-Path $Snapshot "theme-$name.png"
