@@ -5,7 +5,7 @@ Write-Host 'Removing Claude Progress...' -ForegroundColor Cyan
 
 # Close the window
 Get-CimInstance Win32_Process -Filter "Name='powershell.exe'" |
-  Where-Object { $_.CommandLine -like '*ClaudeProgress.ps1*' } |
+  Where-Object { $_.CommandLine -like '*ClaudeProgress.ps1*' -or $_.CommandLine -like '*chat-watch.ps1*' } |
   ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }
 
 # Remove only our hooks from Claude Code's settings

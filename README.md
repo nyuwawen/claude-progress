@@ -4,7 +4,7 @@
 
 # Claude Progress
 
-**A live progress window for Claude Code on Windows.**<br>
+**A live progress window for Claude on Windows: Claude Code and regular chats.**<br>
 See what Claude is doing right now, where the time went, and roughly how long is left.
 
 ![Windows](https://img.shields.io/badge/Windows-10%20%7C%2011-0078D4?logo=windows&logoColor=white)
@@ -36,6 +36,7 @@ See what Claude is doing right now, where the time went, and roughly how long is
 | 🌈 **Timeline bar** | The whole job as coloured segments, so you can see where the time went, including time Claude spent thinking. |
 | ⏱️ **Honest estimates** | "Time left" is learned from how long similar steps took before. It never sticks at 99%: when a step runs long, the bar eases back, the extra time moves onto that step, and a note tells you why. |
 | 🗂️ **One card per chat** | Every Claude chat that's working gets its own progress card, labelled with its folder and your message. |
+| 💬 **Code and regular chats** | Claude Code sessions are tracked step by step through hooks. Regular chats in the Claude desktop app get a card too, with the chat name, its current step and a learned estimate. |
 | ✅ **Activity list** | Each step with ✓ or ✗, how long it took, and what's running now. |
 | 🎨 **Themes, sizes, modes** | Normal, DADA and REN themes · Small to Extra large (or Ctrl + scroll) · Saver, Neutral and Full power. |
 | ➖ **Minimize** | Folds down into a slim bar toward the button you clicked, with the percent, time left and a thin progress line. |
@@ -76,6 +77,7 @@ Right-click the window for everything. Drag it anywhere; it remembers its place 
 | **Performance** | Saver · Neutral · Full power |
 | **Size** | Small · Medium · Large · Extra large (or hold **Ctrl** and scroll) |
 | **Show activity details** | the step list and colour legend |
+| **Show regular Claude chats** | also track chats in the Claude desktop app (on by default) |
 | **Hide when Claude is idle** | only show the window while Claude works |
 | **Sound when a long job finishes** | a chime after jobs longer than 30 seconds |
 
@@ -113,6 +115,7 @@ The installer registers `hook.js` as a Claude Code [hook](https://docs.claude.co
 
 `hook.js` records what's happening in `%USERPROFILE%\.claude-progress\state.json` and keeps the last 12 durations of each kind of step in `history.json`. A file lock keeps several chats from overwriting each other. The hook never prints anything and always exits successfully, so it can never block or slow down Claude.
 
+Regular chats have no hooks, so `chat-watch.ps1` reads the Claude desktop app's window through Windows UI Automation: a chat whose sidebar entry says **Running** is replying, and the open chat's step line ("Searching the web") becomes the current step. It reports through `hook.js`, so chats become cards like any Code session, and chat reply times are learned separately. It only reads the **Claude** tab; while you're on the Code tab, running chats are kept as they were until you switch back (or for up to 10 minutes).
 The window (`ClaudeProgress.ps1`) is WPF running in Windows PowerShell 5.1, so there's nothing extra to install beyond Node.js.
 
 <details>
@@ -132,6 +135,7 @@ The window (`ClaudeProgress.ps1`) is WPF running in Windows PowerShell 5.1, so t
 | --- | --- |
 | `ClaudeProgress.ps1` | the window |
 | `hook.js` | the hook Claude Code runs; records steps and timings |
+| `chat-watch.ps1` | watches regular chats in the Claude desktop app |
 | `settings-hooks.js` | adds or removes the hooks in `~/.claude/settings.json` |
 | `demo.js` | plays two fake chats for the demo |
 | `install.ps1`, `Install.cmd` | installer |
@@ -152,6 +156,8 @@ That's the first time it has timed that kind of step. After one run it has a tim
 **Does it slow Claude down?**
 No. The hook takes about 50 ms per step, never prints anything and always exits successfully.
 
+**Does it work with regular Claude chats, not just Claude Code?**
+Yes, in the Claude desktop app. Chats show their name, current step and time left. They don't show file names or commands, because regular chat doesn't share those. Turn it off with right-click → **Show regular Claude chats**.
 **Does it work with several Claude chats at once?**
 Yes. Each working chat gets its own card.
 

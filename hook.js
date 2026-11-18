@@ -51,6 +51,16 @@ const describe = (tool, input) => {
       detail: cut(i.description || cmd, 70),
     }
   }
+  // Steps from regular Claude chats (sent by chat-watch.ps1), e.g. "Searching the web".
+  if (tool === 'ClaudeChat') {
+    const d = String(i.description || 'Working')
+    const cat = /search|web|fetch|brows/i.test(d) ? 'web'
+      : /image|design|render|video|draw|artifact/i.test(d) ? 'render'
+      : /writ|edit|creat|draft|updat/i.test(d) ? 'edit'
+      : /read|file|look/i.test(d) ? 'read'
+      : /command|code|run|analy|calculat/i.test(d) ? 'run' : 'other'
+    return { key: `chat:${cut(d, 40).toLowerCase()}`, cat, label: cut(d, 46), detail: '' }
+  }
   const table = {
     Read: ['read', 'Reading', base(i.file_path)],
     Grep: ['read', 'Searching code', i.pattern],
@@ -93,6 +103,7 @@ const main = event => {
   const state = readJson(STATE, { sessions: {} })
   const history = readJson(HISTORY, {})
   const sid = e.session_id || 'default'
+  const TURN = e.turn_key || 'turn' // chats learn their reply times apart from Claude Code jobs
   const s = state.sessions[sid] || { turnStartedAt: null, turnEstimateMs: null, steps: {}, log: [] }
   s.steps = s.steps || {}
   s.log = s.log || []
@@ -105,7 +116,7 @@ const main = event => {
   }
   const startTurn = () => {
     s.turnStartedAt = now
-    s.turnEstimateMs = median(history.turn)
+    s.turnEstimateMs = median(history[TURN])
     s.steps = {}
     s.log = []
     s.finishedAt = null
@@ -139,7 +150,7 @@ const main = event => {
     if (s.turnStartedAt) {
       s.lastTurnMs = now - s.turnStartedAt
       s.lastTurnStartedAt = s.turnStartedAt
-      remember('turn', s.lastTurnMs)
+      remember(TURN, s.lastTurnMs)
     }
     for (const [id, step] of Object.entries(s.steps)) finishStep(id, step)
     s.turnStartedAt = null

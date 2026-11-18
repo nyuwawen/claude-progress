@@ -150,6 +150,7 @@ $catNames = [ordered]@{ read = 'Reading'; edit = 'Editing'; run = 'Running'; ren
           <Separator/>
           <MenuItem x:Name="MenuMini" Header="Minimize  (or double-click)" IsCheckable="True"/>
           <MenuItem x:Name="MenuDetails" Header="Show activity details" IsCheckable="True"/>
+          <MenuItem x:Name="MenuChats" Header="Show regular Claude chats" IsCheckable="True"/>
           <MenuItem x:Name="MenuHideIdle" Header="Hide when Claude is idle" IsCheckable="True"/>
           <MenuItem x:Name="MenuSound" Header="Sound when a long job finishes" IsCheckable="True"/>
           <Separator/>
@@ -241,7 +242,7 @@ $cardNames = 'Dot','Clock','Chat','NowPanel','NowLabel','NowDetail','TurnPct','S
 $window = [Windows.Markup.XamlReader]::Load((New-Object System.Xml.XmlNodeReader $windowXaml))
 $ui = @{}
 foreach ($n in 'Shell','GlowLayer','Glow','ModeSaver','ModeNeutral','ModeFull','Zoom','Badge','BadgeText','ThemeNormal','ThemeDADA','ThemeRen','Size75','Size100','Size125','Size150',
-               'Dot','Count','Title','Sessions','Legend','MinHit','MinHover','MinBtn','MiniTrack','MiniFill','MenuMini','MenuDetails','MenuHideIdle','MenuSound','MenuReset','MenuExit') {
+               'Dot','Count','Title','Sessions','Legend','MinHit','MinHover','MinBtn','MiniTrack','MiniFill','MenuMini','MenuDetails','MenuChats','MenuHideIdle','MenuSound','MenuReset','MenuExit') {
   $ui[$n] = $window.FindName($n)
 }
 
@@ -317,11 +318,11 @@ if ($SelfTest) {
 }
 
 # ---------- preferences ----------
-$prefs = @{ left = $null; top = $null; hideIdle = $false; sound = $true; details = $true; scale = 1.0; theme = 'Normal'; mode = 'Neutral'; mini = $false }
+$prefs = @{ left = $null; top = $null; hideIdle = $false; sound = $true; details = $true; scale = 1.0; theme = 'Normal'; mode = 'Neutral'; mini = $false; chats = $true }
 if (Test-Path $prefsFile) {
   try {
     $p = Get-Content $prefsFile -Raw | ConvertFrom-Json
-    foreach ($k in 'left','top','hideIdle','sound','details','scale','theme','mode','mini') { if ($null -ne $p.$k) { $prefs[$k] = $p.$k } }
+    foreach ($k in 'left','top','hideIdle','sound','details','scale','theme','mode','mini','chats') { if ($null -ne $p.$k) { $prefs[$k] = $p.$k } }
   } catch {}
 }
 if ($Theme) { $prefs.theme = $Theme }
@@ -374,6 +375,22 @@ $ui.MenuHideIdle.IsChecked = [bool]$prefs.hideIdle
 $ui.MenuSound.IsChecked = [bool]$prefs.sound
 $ui.MenuDetails.Add_Click({ $prefs.details = $ui.MenuDetails.IsChecked; Save-Prefs })
 $ui.MenuHideIdle.Add_Click({ $prefs.hideIdle = $ui.MenuHideIdle.IsChecked; Save-Prefs })
+
+# Regular Claude chats have no hooks: chat-watch.ps1 reads the Claude app's window and reports them.
+$script:chatWatch = $null
+function Set-ChatWatch([bool]$on) {
+  if ($Demo -or $Snapshot -or $SelfTest) { return }
+  if ($script:chatWatch -and -not $script:chatWatch.HasExited) { try { $script:chatWatch.Kill() } catch {} }
+  $script:chatWatch = $null
+  $watcher = Join-Path $PSScriptRoot 'chat-watch.ps1'
+  if ($on -and (Test-Path $watcher)) {
+    $every = if ($script:perf.trim -gt 0 -and $script:perf.fps -le 20) { 3000 } else { 1500 }
+    $script:chatWatch = Start-Process -FilePath 'powershell.exe' -WindowStyle Hidden -PassThru -ArgumentList @(
+      '-NoProfile', '-ExecutionPolicy', 'Bypass', '-WindowStyle', 'Hidden', '-File', "`"$watcher`"", '-ParentPid', $PID, '-IntervalMs', $every)
+  }
+}
+$ui.MenuChats.IsChecked = [bool]$prefs.chats
+$ui.MenuChats.Add_Click({ $prefs.chats = $ui.MenuChats.IsChecked; Save-Prefs; Set-ChatWatch $prefs.chats })
 $ui.MenuSound.Add_Click({ $prefs.sound = $ui.MenuSound.IsChecked; Save-Prefs })
 $ui.MenuReset.Add_Click({ Move-ToCorner; Save-Prefs })
 $ui.MenuExit.Add_Click({ $window.Close() })
@@ -1095,10 +1112,12 @@ $window.Add_Loaded({
   if ($null -ne $prefs.left -and $null -ne $prefs.top) { $window.Left = $prefs.left; $window.Top = $prefs.top } else { Move-ToCorner }
   try { Update-View } catch {}
   $timer.Start()
+  try { Set-ChatWatch ([bool]$prefs.chats) } catch { Write-UiError $_ }
 })
 # On Exit, let go of the single-copy lock at once, so reopening straight away works.
 $window.Add_Closed({
   $timer.Stop()
+  if ($script:chatWatch -and -not $script:chatWatch.HasExited) { try { $script:chatWatch.Kill() } catch {} }
   if ($script:mutex) { try { $script:mutex.ReleaseMutex() } catch {}; try { $script:mutex.Dispose() } catch {}; $script:mutex = $null }
 })
 

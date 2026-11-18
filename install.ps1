@@ -10,10 +10,10 @@ if (-not $node) { Write-Host 'Node.js is required (https://nodejs.org). Install 
 
 # 1. Close a running copy (when updating), then copy the app
 Get-CimInstance Win32_Process -Filter "Name='powershell.exe'" |
-  Where-Object { $_.CommandLine -like '*ClaudeProgress.ps1*' -and $_.CommandLine -notlike '*-SelfTest*' } |
+  Where-Object { ($_.CommandLine -like '*ClaudeProgress.ps1*' -or $_.CommandLine -like '*chat-watch.ps1*') -and $_.CommandLine -notlike '*-SelfTest*' } |
   ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }
 New-Item -ItemType Directory -Force -Path $dest | Out-Null
-foreach ($f in 'hook.js','demo.js','settings-hooks.js','ClaudeProgress.ps1','uninstall.ps1','Uninstall.cmd') {
+foreach ($f in 'hook.js','demo.js','settings-hooks.js','ClaudeProgress.ps1','chat-watch.ps1','uninstall.ps1','Uninstall.cmd') {
   Copy-Item (Join-Path $src $f) (Join-Path $dest $f) -Force
 }
 
