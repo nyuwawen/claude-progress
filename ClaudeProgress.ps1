@@ -18,6 +18,14 @@ param([switch]$Demo, [switch]$SelfTest, [string]$Theme, [string]$Snapshot, [stri
 # -Snapshot <folder>: renders the window in each theme, with sample activity, to PNG files there.
 
 $ErrorActionPreference = 'Stop'
+# Any error that would stop the app is written to %USERPROFILE%\.claude-progress\window-errors.log first.
+trap {
+  try {
+    $d = Join-Path $env:USERPROFILE '.claude-progress'; New-Item -ItemType Directory -Force -Path $d | Out-Null
+    Add-Content -Path (Join-Path $d 'window-errors.log') -Value "$(Get-Date -Format s) STOPPED: $($_.Exception.Message) @ line $($_.InvocationInfo.ScriptLineNumber)"
+  } catch {}
+  break
+}
 Add-Type -AssemblyName PresentationFramework, PresentationCore, WindowsBase
 # Lets the window hand unused memory back to Windows (see Performance modes).
 Add-Type -Namespace ClaudeProgress -Name Mem -MemberDefinition '[DllImport("psapi.dll")] public static extern bool EmptyWorkingSet(System.IntPtr hProcess);'
@@ -1075,4 +1083,10 @@ $window.Add_Closed({ $timer.Stop() })
 
 $app = New-Object System.Windows.Application
 $app.ShutdownMode = 'OnMainWindowClose'
+# A mistake in any click, hover or menu handler is logged and the window keeps running.
+$app.Add_DispatcherUnhandledException({
+  param($sender, $ev)
+  try { Add-Content -Path (Join-Path $root 'window-errors.log') -Value "$(Get-Date -Format s) handled: $($ev.Exception.Message)" } catch {}
+  $ev.Handled = $true
+})
 [void]$app.Run($window)
