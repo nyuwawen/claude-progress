@@ -47,10 +47,22 @@ $stateFile = Join-Path $dataDir 'state.json'
 $prefsFile = Join-Path $root 'window.json'
 
 # Only one copy in normal mode.
+#  - If another copy is still closing (you chose Exit a moment ago), wait for it, then start.
+#  - If another copy is running, ask it to show itself (it may be hidden while Claude is idle), then quit.
+$script:showSignal = $null
 if (-not $Demo -and -not $SelfTest -and -not $Snapshot) {
   $created = $false
-  $script:mutex = New-Object System.Threading.Mutex($true, 'Local\ClaudeProgressWindow', [ref]$created)
-  if (-not $created) { exit 0 }
+  $script:showSignal = New-Object System.Threading.EventWaitHandle($false, 'AutoReset', 'Local\ClaudeProgressShow')
+  $script:mutex = New-Object System.Threading.Mutex($false, 'Local\ClaudeProgressWindow')
+  $owned = $false
+  try {
+    $owned = $script:mutex.WaitOne(0)
+    if (-not $owned) {
+      [void]$script:showSignal.Set()            # a running copy shows itself right away
+      $owned = $script:mutex.WaitOne(5000)      # or, if it was closing, we take over once it's gone
+    }
+  } catch [System.Threading.AbandonedMutexException] { $owned = $true }   # the last copy was closed abruptly
+  if (-not $owned) { exit 0 }
 }
 
 # ---------- themes ----------
@@ -1021,6 +1033,11 @@ $timer = New-Object System.Windows.Threading.DispatcherTimer
 $timer.Interval = [TimeSpan]::FromMilliseconds(500)
 $script:lastError = $null
 $timer.Add_Tick({
+  # Opened again while already running: show the window (for the usual few seconds if Claude is idle).
+  if ($script:showSignal -and $script:showSignal.WaitOne(0)) {
+    $script:startedAt = [double][DateTimeOffset]::UtcNow.ToUnixTimeMilliseconds()
+    try { $window.Activate() | Out-Null } catch {}
+  }
   try { Update-View } catch {
     $msg = "$($_.Exception.Message) @ line $($_.InvocationInfo.ScriptLineNumber)"
     if ($msg -ne $script:lastError) { $script:lastError = $msg; Add-Content -Path (Join-Path $root 'window-errors.log') -Value "$(Get-Date -Format s) $msg" }
@@ -1079,7 +1096,11 @@ $window.Add_Loaded({
   try { Update-View } catch {}
   $timer.Start()
 })
-$window.Add_Closed({ $timer.Stop() })
+# On Exit, let go of the single-copy lock at once, so reopening straight away works.
+$window.Add_Closed({
+  $timer.Stop()
+  if ($script:mutex) { try { $script:mutex.ReleaseMutex() } catch {}; try { $script:mutex.Dispose() } catch {}; $script:mutex = $null }
+})
 
 $app = New-Object System.Windows.Application
 $app.ShutdownMode = 'OnMainWindowClose'
