@@ -1,0 +1,16 @@
+// The new lock code rmSync's state.lock recursively when it is a directory. Check it does not
+// follow a junction/symlink at state.lock and delete the TARGET's contents. Temp dirs only.
+const fs = require('fs'), path = require('path'), os = require('os')
+const { spawnSync } = require('child_process')
+const HOOK = path.join(__dirname, '..', '..', 'hook.js')
+const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'cp-junc-'))
+const victim = fs.mkdtempSync(path.join(os.tmpdir(), 'cp-victim-'))
+fs.writeFileSync(path.join(victim, 'precious.txt'), 'keep me')
+fs.symlinkSync(victim, path.join(dir, 'state.lock'), 'junction')
+const t = Date.now()
+spawnSync(process.execPath, [HOOK, 'prompt'], { input: JSON.stringify({ session_id: 's', prompt: 'p' }), env: { ...process.env, CLAUDE_PROGRESS_DIR: dir } })
+console.log('hook ms:', Date.now() - t)
+console.log('victim file still there:', fs.existsSync(path.join(victim, 'precious.txt')))
+console.log('state.lock now:', fs.existsSync(path.join(dir, 'state.lock')) ? (fs.lstatSync(path.join(dir, 'state.lock')).isSymbolicLink() ? 'junction' : 'other') : 'gone')
+console.log('state written:', fs.existsSync(path.join(dir, 'state.json')))
+fs.rmSync(dir, { recursive: true, force: true }); fs.rmSync(victim, { recursive: true, force: true })

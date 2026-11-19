@@ -1,4 +1,4 @@
-param([int]$ParentPid = 0, [int]$IntervalMs = 1500)
+﻿param([int]$ParentPid = 0, [int]$IntervalMs = 1500)
 # Claude Progress - chat watcher.
 # Regular Claude chats (the Claude tab of the desktop app) have no hooks, so this reads the
 # app's window through Windows UI Automation instead:
@@ -19,8 +19,18 @@ if (-not $mutex.WaitOne(0)) { exit 0 }
 try { [System.Diagnostics.Process]::GetCurrentProcess().PriorityClass = 'BelowNormal' } catch {}
 
 function Send-Hook($event, $payload) {
+  # Write the JSON to node's stdin as UTF-8 bytes. (Piping a string to a program in Windows
+  # PowerShell 5.1 encodes it as ASCII, turning accents, CJK and emoji in chat names into "?".)
   $json = $payload | ConvertTo-Json -Compress
-  try { $json | & node $hook $event 2>$null | Out-Null } catch {}
+  try {
+    $psi = New-Object System.Diagnostics.ProcessStartInfo('node', ('"{0}" {1}' -f $hook, $event))
+    $psi.UseShellExecute = $false; $psi.RedirectStandardInput = $true; $psi.CreateNoWindow = $true
+    $p = [System.Diagnostics.Process]::Start($psi)
+    $bytes = (New-Object System.Text.UTF8Encoding($false)).GetBytes($json)
+    $p.StandardInput.BaseStream.Write($bytes, 0, $bytes.Length)
+    $p.StandardInput.Close()
+    [void]$p.WaitForExit(10000)
+  } catch {}
 }
 
 $cond = New-Object System.Windows.Automation.OrCondition(
@@ -49,7 +59,7 @@ function Read-Window {
       if ($name -cmatch '^(.+) - Claude$') { $r.open = $Matches[1] }
     } elseif ($name -ceq 'Stop response') {
       $r.responding = $true
-    } elseif ($name -cmatch '^(.+?) Running( .*)?$') {
+    } elseif ($name -cmatch '^(.+) Running( Includes .+)?$') {
       $r.running.Add($Matches[1])
     } elseif ($name -cmatch '^(.+) running$') {
       $r.step = $Matches[1]

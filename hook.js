@@ -20,20 +20,33 @@ const RENDER = /render|ffmpeg|blender|remotion|magick|export|build|puppeteer|pla
 const readJson = (file, fallback) => {
   try { return JSON.parse(fs.readFileSync(file, 'utf8')) } catch { return fallback }
 }
+const pause = ms => Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms)
+// Write to a temp file, then swap it in. The window may be reading the file at that instant
+// (Windows then refuses the rename), so retry briefly, and never leave temp files behind.
 const writeJson = (file, value) => {
   const tmp = `${file}.${process.pid}.tmp`
   fs.writeFileSync(tmp, JSON.stringify(value))
-  fs.renameSync(tmp, file)
+  for (let i = 0; ; i++) {
+    try { fs.renameSync(tmp, file); return } catch (err) {
+      if (i >= 20 || !['EPERM', 'EBUSY', 'EACCES'].includes(err.code)) { try { fs.unlinkSync(tmp) } catch {} throw err }
+      pause(25)
+    }
+  }
 }
 const median = xs => {
-  if (!xs || xs.length === 0) return null
+  if (!Array.isArray(xs) || xs.length === 0) return null
   const s = [...xs].sort((a, b) => a - b)
   return s[Math.floor(s.length / 2)]
 }
+// Display text: no control or text-direction characters (they can make a title read
+// differently from what it is), whitespace collapsed, cut by whole characters (never half an emoji).
 const cut = (s, n) => {
-  s = String(s || '').replace(/\s+/g, ' ').trim()
-  return s.length > n ? `${s.slice(0, n - 1)}…` : s
+  s = String(s || '').replace(/[‪-‮⁦-⁩‎‏]/g, '').replace(/[\s\p{Cc}]+/gu, ' ').trim()
+  const chars = Array.from(s)
+  return chars.length > n ? `${chars.slice(0, n - 1).join('')}…` : s
 }
+// Keys taken from input must never be special object names.
+const safeKey = k => (k === '__proto__' || k in Object.prototype) ? `_${k}` : k
 const base = p => String(p || '').replace(/^.*[\\/]/, '')
 const host = u => { try { return new URL(u).host } catch { return cut(u, 40) } }
 
@@ -74,11 +87,12 @@ const describe = (tool, input) => {
     Task: ['agent', 'Helper agent', i.description],
     Skill: ['other', 'Loading skill', i.skill],
   }
-  if (table[tool]) {
+  if (Object.hasOwn(table, tool)) { // own keys only: a tool named "constructor" is not in the table
     const [cat, label, detail] = table[tool]
     return { key: tool, cat, label, detail: cut(detail, 70) }
   }
-  const short = String(tool).replace(/^mcp__[^_]+(__)?/, '').replace(/_/g, ' ')
+  // mcp__<server>__<tool>: server names may contain single underscores (claude_in_chrome).
+  const short = String(tool).replace(/^mcp__(.+?__)?/, '').replace(/_/g, ' ')
   const firstText = Object.values(i).find(v => typeof v === 'string') || ''
   const isRender = /image|video|render|export|generate|design/i.test(short)
   const isWeb = /browser|navigate|fetch|page|screenshot/i.test(short)
@@ -94,25 +108,44 @@ const main = event => {
   let raw = ''
   try { raw = fs.readFileSync(0, 'utf8') } catch {}
   let e = {}
+  raw = raw.replace(/^﻿/, '') // PowerShell pipes can start with a byte-order mark
   try { e = JSON.parse(raw || '{}') } catch {}
   const failed = event === 'fail' || e.hook_event_name === 'PostToolUseFailure'
   if (event === 'fail') event = 'post'
 
   fs.mkdirSync(DIR, { recursive: true })
   const now = Date.now()
-  const state = readJson(STATE, { sessions: {} })
-  const history = readJson(HISTORY, {})
-  const sid = e.session_id || 'default'
-  const TURN = e.turn_key || 'turn' // chats learn their reply times apart from Claude Code jobs
+  // Valid JSON of the wrong shape (e.g. {} or null after an outside edit) is replaced, not trusted.
+  const isObj = v => v !== null && typeof v === 'object' && !Array.isArray(v)
+  let state = readJson(STATE, null)
+  if (!isObj(state) || !isObj(state.sessions)) state = { sessions: {} }
+  // Older versions kept chat keys in their original case; fold them to lower case
+  // (if two clash, keep the most recently updated one).
+  for (const k of Object.keys(state.sessions)) {
+    const low = k.toLowerCase()
+    if (!k.startsWith('chat:') || k === low) continue
+    const v = state.sessions[k]; delete state.sessions[k]
+    const cur = state.sessions[low]
+    if (!cur || (Number(v && v.updatedAt) || 0) > (Number(cur && cur.updatedAt) || 0)) state.sessions[low] = v
+  }
+  let history = readJson(HISTORY, null)
+  if (!isObj(history)) history = {}
+  // Chat names are matched without regard to case ("Fix Bug" and "fix bug" are one chat): the
+  // window's JSON reader can't hold two keys that differ only in case.
+  let sid = String(e.session_id || 'default')
+  if (sid.startsWith('chat:')) sid = sid.toLowerCase()
+  sid = safeKey(sid)
+  const TURN = safeKey(String(e.turn_key || 'turn')) // chats learn their reply times apart from Claude Code jobs
   const s = state.sessions[sid] || { turnStartedAt: null, turnEstimateMs: null, steps: {}, log: [] }
-  s.steps = s.steps || {}
-  s.log = s.log || []
+  if (!isObj(s.steps)) s.steps = {}
+  if (!Array.isArray(s.log)) s.log = []
   s.cwd = e.cwd || s.cwd
   s.updatedAt = now
 
   const remember = (key, ms) => {
     if (ms < 300) return
-    history[key] = [...(history[key] || []), ms].slice(-KEEP)
+    key = safeKey(key)
+    history[key] = [...(Array.isArray(history[key]) ? history[key] : []), ms].slice(-KEEP)
   }
   const startTurn = () => {
     s.turnStartedAt = now
@@ -134,11 +167,11 @@ const main = event => {
   } else if (event === 'pre') {
     if (!s.turnStartedAt) startTurn()
     const d = describe(e.tool_name, e.tool_input)
-    const id = e.tool_use_id || `${d.key}-${now}`
-    s.steps[id] = { ...d, startedAt: now, estimateMs: median(history[d.key]) }
+    const id = safeKey(String(e.tool_use_id || `${d.key}-${now}`))
+    s.steps[id] = { ...d, startedAt: now, estimateMs: median(history[safeKey(d.key)]) }
   } else if (event === 'post') {
-    const id = e.tool_use_id
-    if (id && s.steps[id]) {
+    const id = e.tool_use_id ? safeKey(String(e.tool_use_id)) : null
+    if (id && Object.hasOwn(s.steps, id)) {
       finishStep(id, s.steps[id])
     } else {
       // No id match: close the oldest running step of the same kind.
@@ -175,7 +208,11 @@ const withLock = fn => {
   let fd = null
   while (fd === null) {
     try { fd = fs.openSync(LOCK, 'wx') } catch {
-      try { if (Date.now() - fs.statSync(LOCK).mtimeMs > 3000) fs.unlinkSync(LOCK) } catch {}
+      try {
+        const st = fs.statSync(LOCK)
+        if (st.isDirectory()) fs.rmSync(LOCK, { recursive: true, force: true }) // not ours: a lock is always a file
+        else if (Date.now() - st.mtimeMs > 3000) fs.unlinkSync(LOCK)
+      } catch {}
       if (Date.now() > deadline) break // give up waiting; better a lost update than a stuck Claude
       sleep(15)
     }

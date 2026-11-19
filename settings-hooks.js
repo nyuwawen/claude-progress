@@ -31,6 +31,10 @@ for (const ev of Object.keys(hooks)) {
 }
 
 if (action === 'add') {
+  // Hook commands may be run by a shell (cmd or bash): refuse paths with characters it would expand.
+  for (const p of [nodeExe, hookJs]) {
+    if (/[$`"!%]/.test(p)) { console.error(`Can't install from a path containing $ \` " ! or %: ${p}`); process.exit(1) }
+  }
   const q = p => `"${p.replace(/\\/g, '/')}"`
   // The trailing "#claude-progress-hook" marks our entries; the hook ignores extra args.
   const cmd = ev => `${q(nodeExe)} ${q(hookJs)} ${ev} ${MARK}`

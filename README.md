@@ -104,7 +104,7 @@ Claude Code ──hook events──▶ hook.js ──writes──▶ state.json 
                                      └──────────▶ history.json  (past step times → estimates)
 ```
 
-The installer registers `hook.js` as a Claude Code [hook](https://docs.claude.com/en/docs/claude-code/hooks) for these events:
+The installer registers `hook.js` as a Claude Code [hook](https://code.claude.com/docs/en/hooks) for these events:
 
 | Hook | Meaning |
 | --- | --- |
@@ -164,6 +164,16 @@ Yes. Each working chat gets its own card.
 
 **How do I remove it?**
 Start menu → **Claude Progress** → **Uninstall Claude Progress** (or run `Uninstall.cmd`). It closes the window, removes only its own hooks and deletes the app and shortcuts. Your timing history in `%USERPROFILE%\.claude-progress` stays; delete that folder if you like.
+
+## 🧪 Testing
+
+```powershell
+node --test "tests/unit/*.test.js"                                   # unit: hook.js and settings-hooks.js (181 tests)
+powershell -ExecutionPolicy Bypass -File tests\functional\run-functional.ps1   # functional: window, themes, demo, chat path
+node tests\security\render-harness.js                                # security: hostile text, bad state files, scale
+```
+
+Every test runs in temporary folders: it never touches your installed app, your Claude settings or the scheduled task, and no window is shown on screen. `tests\security\` holds the pen-test proofs of concept (case collisions, file races, reserved names, lock abuse, installer path quoting).
 
 ## 📄 License
 

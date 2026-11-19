@@ -14,7 +14,8 @@ if (-not $Outside -and [CP.Pkg]::GetCurrentPackageFullName([ref]$len, $null) -ne
   $logFile = Join-Path $env:USERPROFILE '.claude-progress\install.log'
   New-Item -ItemType Directory -Force -Path (Split-Path $logFile) | Out-Null
   Remove-Item $logFile -ErrorAction SilentlyContinue
-  $a = New-ScheduledTaskAction -Execute 'powershell.exe' -Argument "-NoProfile -ExecutionPolicy Bypass -Command `"& '$PSCommandPath' -Outside *> '$logFile'`""
+  # Escape for a single-quoted string the way PowerShell itself does (this also covers ’ ‘ quotes).
+  $a = New-ScheduledTaskAction -Execute 'powershell.exe' -Argument "-NoProfile -ExecutionPolicy Bypass -Command `"& '$([System.Management.Automation.Language.CodeGeneration]::EscapeSingleQuotedStringContent($PSCommandPath))' -Outside *> '$([System.Management.Automation.Language.CodeGeneration]::EscapeSingleQuotedStringContent($logFile))'`""
   Register-ScheduledTask -TaskName 'Claude Progress Setup' -Action $a -Force | Out-Null
   Start-ScheduledTask -TaskName 'Claude Progress Setup'
   Start-Sleep -Seconds 2

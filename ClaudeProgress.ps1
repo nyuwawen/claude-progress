@@ -77,7 +77,7 @@ $themes = [ordered]@{
       text = '#FFFFFF'; sub = '#C8C3BC'; muted = '#8C867E'
       accent = '#D97757'; done = '#7FB77E'; noticeBg = '#33E5B94E'; noticeText = '#F2D58A'; fail = '#E06C6C'
     }
-    cats = @{ read = '#6FB3D2'; edit = '#7FB77E'; run = '#E5B94E'; render = '#D97757'; web = '#B48EDB'; agent = '#E58FB4'; other = '#9AA0A6'; think = '#5E5A53' }
+    cats = @{ read = '#6FB3D2'; edit = '#7FB77E'; run = '#E5B94E'; render = '#D97757'; web = '#B48EDB'; agent = '#E58FB4'; other = '#9AA0A6'; think = '#756F66' }
   }
   DADA = @{
     badge = 'DADA'
@@ -87,7 +87,7 @@ $themes = [ordered]@{
       text = '#FFFFFF'; sub = '#E0D2FA'; muted = '#A592C9'
       accent = '#C38BFF'; done = '#9BE8C0'; noticeBg = '#33FF8FD8'; noticeText = '#FFC9EE'; fail = '#FF7A9C'
     }
-    cats = @{ read = '#8EC5FF'; edit = '#9BE8C0'; run = '#FFD37A'; render = '#FF8FD8'; web = '#C9A2FF'; agent = '#FFB3C7'; other = '#B8B0D4'; think = '#4F3D73' }
+    cats = @{ read = '#8EC5FF'; edit = '#9BE8C0'; run = '#FFD37A'; render = '#FF8FD8'; web = '#C9A2FF'; agent = '#FF9E7A'; other = '#B8B0D4'; think = '#7A68A8' }
   }
   Ren = @{
     badge = 'REN'
@@ -97,7 +97,7 @@ $themes = [ordered]@{
       text = '#FFFFFF'; sub = '#CCE0F5'; muted = '#7FA0C4'
       accent = '#4FB8FF'; done = '#7FE3C4'; noticeBg = '#3348C6FF'; noticeText = '#BFE8FF'; fail = '#FF8A8A'
     }
-    cats = @{ read = '#7FD8FF'; edit = '#7FE3C4'; run = '#FFD580'; render = '#FF9F7A'; web = '#A9B8FF'; agent = '#F0A6D8'; other = '#A8B8CC'; think = '#2F4870' }
+    cats = @{ read = '#7FD8FF'; edit = '#7FE3C4'; run = '#FFD580'; render = '#FF9F7A'; web = '#A9B8FF'; agent = '#F0A6D8'; other = '#A8B8CC'; think = '#5578A8' }
   }
 }
 $catNames = [ordered]@{ read = 'Reading'; edit = 'Editing'; run = 'Running'; render = 'Rendering'; web = 'Web'; agent = 'Agent'; other = 'Other'; think = 'Thinking' }
@@ -263,6 +263,7 @@ function Build-Legend {
     $sp.Orientation = 'Horizontal'; $sp.Margin = '0,0,7,2'
     $r = New-Object System.Windows.Shapes.Rectangle
     $r.Width = 7; $r.Height = 7; $r.RadiusX = 2; $r.RadiusY = 2; $r.Fill = Get-CatBrush $k; $r.Margin = '0,0,3,0'; $r.VerticalAlignment = 'Center'
+    if ($k -eq 'think') { $r.Height = 3; $r.RadiusX = 1; $r.RadiusY = 1 }   # matches the thin thinking band in the bar
     $t = New-Object System.Windows.Controls.TextBlock
     $t.Text = $catNames[$k]; $t.Foreground = $script:T.muted; $t.FontSize = 10; $t.FontFamily = 'Segoe UI'
     [void]$sp.Children.Add($r); [void]$sp.Children.Add($t)
@@ -601,7 +602,7 @@ $NBSP = [string][char]0xA0
 function Join-Phrases([string]$s) { (($s -split '  ·  ') | ForEach-Object { $_.Trim() -replace ' ', $NBSP }) -join '  ·  ' }
 # Sentences: keep (bracketed bits) whole and never leave the last word alone on a line.
 function Format-NoWidow([string]$s) {
-  $s = [regex]::Replace($s, '([^)]*)', [System.Text.RegularExpressions.MatchEvaluator]{ param($m) $m.Value -replace ' ', $NBSP })
+  $s = [regex]::Replace($s, '\([^)]*\)', [System.Text.RegularExpressions.MatchEvaluator]{ param($m) $m.Value -replace ' ', $NBSP })
   $i = $s.LastIndexOf(' ')
   if ($i -gt 0) { $s = $s.Substring(0, $i) + $NBSP + $s.Substring($i + 1) }
   return $s
@@ -620,7 +621,7 @@ function Get-Estimate($card, [string]$id, [double]$spent, $base, [string]$label,
     $e.bumps++
     if ($label) {
       $card.noticeInfo = @{
-        text  = (Format-NoWidow ('↻ {0} is running long (usually {3}). Added +{1}, about {2} left now.' -f $label, (Format-Ms ($e.value - $old)), (Format-Ms ($e.value - $spent)), (Format-Ms $e.original)))
+        text  = (Format-NoWidow ('↻ {0} is running long (usually {3}). Added +{1}, about{4}{2}{4}left{4}now.' -f $label, (Format-Ms ($e.value - $old)), (Format-Ms ($e.value - $spent)), (Format-Ms $e.original), [char]0xA0))
         until = $now + 7000
       }
     }
@@ -690,6 +691,9 @@ function Draw-Segments($card, $segs, [double]$startAt, [double]$scale, [double]$
       [void]$kids.Add($r)
     }
     $r.Fill = Get-CatBrush $sg.cat
+    # Thinking time is drawn as a thinner band, so it reads as "time spent", not empty track.
+    if ($sg.cat -eq 'think') { $r.Height = 6; [System.Windows.Controls.Canvas]::SetTop($r, 3) }
+    else { $r.Height = 12; [System.Windows.Controls.Canvas]::SetTop($r, 0) }
     $sc = $r.RenderTransform.Children[0]; $tr = $r.RenderTransform.Children[1]
     # Nothing moved since last time: leave it alone (no animation, no redraw).
     $key = '{0:F1}|{1:F1}' -f $x, $len
@@ -735,7 +739,7 @@ function Draw-Activity($card, $rows, [int]$max) {
     $mark.Width = 18; $mark.FontSize = 11; $mark.FontFamily = 'Segoe UI Symbol'; $mark.VerticalAlignment = 'Center'
     if ($row.live) { $mark.Text = '▶'; $mark.Foreground = Get-CatBrush $row.cat }
     elseif ($row.ok -eq $false) { $mark.Text = '✗'; $mark.Foreground = $script:T.fail }
-    elseif ($row.cat -eq 'think') { $mark.Text = '◦'; $mark.Foreground = $script:T.muted }
+    elseif ($row.cat -eq 'think') { $mark.Text = '●'; $mark.FontSize = 8; $mark.Foreground = Get-CatBrush 'think' }
     else { $mark.Text = '✓'; $mark.Foreground = Get-CatBrush $row.cat }
     $txt = New-Object System.Windows.Controls.TextBlock
     $txt.FontFamily = 'Segoe UI'; $txt.FontSize = 11.5; $txt.TextTrimming = 'CharacterEllipsis'; $txt.VerticalAlignment = 'Center'
@@ -786,7 +790,7 @@ function Update-ActiveCard($card, $sid, $s, [double]$now, [int]$maxRows) {
       $card.StepText.Text = Join-Phrases ('{0} elapsed  ·  first time for this kind of step  ·  learning' -f (Format-Ms $stepSpent))
     } else {
       $pct = [math]::Min(99, $stepSpent / $stepEst * 100)
-      $pctAhead = [math]::Min(99, ($stepSpent + $LEAD) / $stepEst * 100)
+      $pctAhead = if ($Snapshot) { $pct } else { [math]::Min(99, ($stepSpent + $LEAD) / $stepEst * 100) }   # a still image shows the bar exactly at its number
       Set-StepFill $card $pct $pctAhead
       $card.StepPct.Text = ('{0}%' -f [math]::Floor($pct))
       $stepRemaining = $stepEst - $stepSpent
@@ -879,25 +883,54 @@ $GRACE = 6000
 $DONE_MS = if ($Demo) { 120000 } else { 8000 }   # how long a finished chat's card stays (the demo keeps them to show the summary)
 $script:cards = @{}
 $script:order = ''
+$MAX_CARDS = 10
+$MAX_STATE_BYTES = 5MB
+$script:lastGoodState = $null
+$script:stateErrorLogged = $false
+# Reads state.json without blocking hook.js from replacing it (share read, write and delete).
+# If it can't be read or parsed, keep showing the last good state and log the reason once.
+function Read-State {
+  if (-not (Test-Path $stateFile)) { return $null }
+  try {
+    $fs = [System.IO.File]::Open($stateFile, 'Open', 'Read', [System.IO.FileShare]'ReadWrite, Delete')
+    try {
+      if ($fs.Length -gt $MAX_STATE_BYTES) { throw "state.json is too large ($($fs.Length) bytes)" }
+      $text = (New-Object System.IO.StreamReader($fs, [System.Text.Encoding]::UTF8)).ReadToEnd()
+    } finally { $fs.Dispose() }
+    $script:lastGoodState = $text | ConvertFrom-Json
+    $script:stateErrorLogged = $false
+  } catch {
+    if (-not $script:stateErrorLogged) {
+      $script:stateErrorLogged = $true
+      # Short message only: some parse errors quote the whole file, which may hold prompt text.
+      $msg = ($_.Exception.Message -replace '\s+', ' '); if ($msg.Length -gt 200) { $msg = $msg.Substring(0, 200) + '...' }
+      try { Add-Content -Path (Join-Path $root 'window-errors.log') -Value "$(Get-Date -Format s) state.json: $msg" } catch {}
+    }
+  }
+  return $script:lastGoodState
+}
+
 function Update-View {
   $now = [double][DateTimeOffset]::UtcNow.ToUnixTimeMilliseconds()
   Complete-Folds $now
-  $state = $null
-  if (Test-Path $stateFile) { try { $state = Get-Content $stateFile -Raw -Encoding UTF8 | ConvertFrom-Json } catch { return } }
-
+  $state = Read-State
   $active = @(); $finished = @()
   if ($state -and $state.sessions) {
     foreach ($p in $state.sessions.PSObject.Properties) {
-      $s = $p.Value
-      # A chat silent for 30 minutes is treated as stopped.
-      if ($s.turnStartedAt -and ($now - [double]$s.updatedAt) -lt 1800000) { $active += [pscustomobject]@{ id = $p.Name; s = $s } }
-      # A finished chat shows "Finished" for a few seconds, then its card folds away.
-      elseif ($s.finishedAt -and $s.lastTurnStartedAt -and ($now - [double]$s.finishedAt) -lt $DONE_MS) { $finished += [pscustomobject]@{ id = $p.Name; s = $s } }
+      # One damaged session is skipped; it never stops the others from showing.
+      try {
+        $s = $p.Value
+        $upd = $s.updatedAt -as [double]; $fin = $s.finishedAt -as [double]
+        # A chat silent for 30 minutes is treated as stopped.
+        if (($s.turnStartedAt -as [double]) -and $upd -and ($now - $upd) -lt 1800000) { $active += [pscustomobject]@{ id = $p.Name; s = $s } }
+        # A finished chat shows "Finished" for a few seconds, then its card folds away.
+        elseif ($fin -and ($s.lastTurnStartedAt -as [double]) -and ($now - $fin) -lt $DONE_MS) { $finished += [pscustomobject]@{ id = $p.Name; s = $s } }
+      } catch {}
     }
   }
-  $active = @($active | Sort-Object { [double]$_.s.turnStartedAt })
-  $finished = @($finished | Sort-Object { [double]$_.s.finishedAt } -Descending)
-  $shown = @($active) + @($finished)
+  $active = @($active | Sort-Object { $_.s.turnStartedAt -as [double] })
+  $finished = @($finished | Sort-Object { $_.s.finishedAt -as [double] } -Descending)
+  $shown = @(@($active) + @($finished) | Select-Object -First $MAX_CARDS)
   $maxRows = if ($shown.Count -gt 1) { 4 } else { 8 }
 
   # Create, update and order the cards. New cards fade in; cards that go away fade out first.
