@@ -177,9 +177,13 @@ const main = event => {
   const startTurn = () => {
     s.turnStartedAt = now
     s.turnEstimateMs = median(history[TURN])
-    // Helpers still working from the last turn keep going (with their steps).
+    // Helpers still working from the last turn keep going (with their steps), and while the team
+    // is still at work its finished helpers stay listed too (a helper's report starts a new turn).
     s.steps = Object.fromEntries(Object.entries(s.steps).filter(([, v]) => v.agent || v.by))
-    s.log = []
+    // The same holds just after the last helper finished (Claude is now reading its report).
+    const teamRecent = now - (Number(s.teamDoneAt) || 0) < 120000
+    s.log = helpersLeft() || teamRecent ? s.log.filter(l => isObj(l) && l.agent) : []
+    s.teamDoneAt = null
     s.finishedAt = null
     s.waiting = false
   }
@@ -240,6 +244,7 @@ const main = event => {
     else s.steps[safeKey(`agent-${agentId}`)] = { key: `agent:${agentType}`, cat: 'agent', label, detail: '', startedAt: now, estimateMs: null, agent: agentId, ...who }
   } else if (event === 'agent-stop' && agentId) {
     for (const [id, v] of Object.entries(s.steps)) if (v.agent === agentId || v.by === agentId) finishStep(id, v)
+    if (!helpersLeft()) s.teamDoneAt = now
     if (s.waiting && !helpersLeft()) endTurn()
   } else if (event === 'stop') {
     // The reply is done, but background helpers may still be working: the job ends when they do.
