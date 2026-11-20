@@ -1030,6 +1030,30 @@ $script:order = ''
 $MAX_CARDS = 10
 $MAX_STATE_BYTES = 5MB
 $script:lastGoodState = $null
+# Install-timing check for testers: the installer writes when it started; the first live card
+# after that adds when it appeared (install-timing.json, on this computer only).
+# Only a Claude Code job (hooks, not a desktop chat) that started after the install counts, so
+# leftover sessions or chats can't make the install look faster than it was.
+$script:firstCardNoted = [bool]($Demo -or $Snapshot -or $SelfTest)
+$script:installStartedAt = $null
+function Set-FirstCard($active, [double]$now) {
+  try {
+    $f = Join-Path $script:root 'install-timing.json'   # $script: because Update-View has its own $root
+    if ($null -eq $script:installStartedAt) {
+      if (-not (Test-Path $f) -or (Get-Item $f).Length -gt 4KB) { $script:firstCardNoted = $true; return }
+      $t = [IO.File]::ReadAllText($f) | ConvertFrom-Json
+      if ($t.firstCardAt -or -not ($t.installerStartedAt -as [double])) { $script:firstCardNoted = $true; return }
+      $script:installStartedAt = [double]$t.installerStartedAt
+    }
+    $fresh = @($active | Where-Object { -not ([string]$_.id).StartsWith('chat:') -and ($_.s.turnStartedAt -as [double]) -ge $script:installStartedAt })
+    if ($fresh.Count -eq 0) { return }
+    $script:firstCardNoted = $true
+    $t = [IO.File]::ReadAllText($f) | ConvertFrom-Json
+    if ($t.firstCardAt) { return }
+    $t.firstCardAt = [int64]$now
+    [IO.File]::WriteAllText($f, ($t | ConvertTo-Json -Compress))
+  } catch { $script:firstCardNoted = $true }
+}
 $script:stateErrorLogged = $false
 # Reads state.json without blocking hook.js from replacing it (share read, write and delete).
 # If it can't be read or parsed, keep showing the last good state and log the reason once.
@@ -1073,6 +1097,7 @@ function Update-View {
     }
   }
   $active = @($active | Sort-Object { $_.s.turnStartedAt -as [double] })
+  if ($active.Count -gt 0 -and -not $script:firstCardNoted) { Set-FirstCard $active $now }
   $finished = @($finished | Sort-Object { $_.s.finishedAt -as [double] } -Descending)
   $shown = @(@($active) + @($finished) | Select-Object -First $MAX_CARDS)
   $maxRows = if ($shown.Count -gt 1) { 4 } else { 8 }

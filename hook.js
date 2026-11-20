@@ -195,6 +195,7 @@ const main = event => {
     s.teamDoneAt = null
     s.finishedAt = null
     s.waiting = false
+    s.promptChars = 0 // set again when the turn starts from a prompt
   }
   const finishStep = (id, step) => {
     // Count a helper's steps on the helper itself: its own steps may fall out of the log
@@ -210,6 +211,7 @@ const main = event => {
       s.lastTurnMs = now - s.turnStartedAt
       s.lastTurnStartedAt = s.turnStartedAt
       remember(TURN, s.lastTurnMs)
+      logJob()
     }
     for (const [id, step] of Object.entries(s.steps)) finishStep(id, step)
     s.turnStartedAt = null
@@ -217,8 +219,30 @@ const main = event => {
     s.waiting = false
   }
 
+  // One line per finished job in jobs.jsonl, on this computer only, so time estimates can be
+  // tested against real jobs (and testers can choose to share it). Only the project folder's
+  // name and the prompt's length are kept, never the prompt itself.
+  function logJob() {
+    try {
+      const file = path.join(DIR, 'jobs.jsonl')
+      try {
+        if (fs.statSync(file).size > 2 * 1024 * 1024) {
+          // Keep one older file; if it can't be replaced (locked, or a folder), start afresh rather than grow forever.
+          try { fs.renameSync(file, path.join(DIR, 'jobs.old.jsonl')) } catch { fs.truncateSync(file, 0) }
+        }
+      } catch {}
+      const job = {
+        startedAt: s.turnStartedAt, endedAt: now, ms: now - s.turnStartedAt,
+        kind: sid.startsWith('chat:') ? 'chat' : 'code', project: base(s.cwd), promptChars: Number(s.promptChars) || 0,
+        steps: s.log.filter(l => !l.agent).length, helpers: s.log.filter(l => l.agent).length,
+      }
+      fs.appendFileSync(file, JSON.stringify(job) + '\n')
+    } catch {}
+  }
+
   if (event === 'prompt') {
     startTurn()
+    s.promptChars = Array.from(String(e.prompt || '')).length
     if (e.prompt) s.title = cut(e.prompt, 60)
   } else if (event === 'pre') {
     if (!s.turnStartedAt) startTurn()

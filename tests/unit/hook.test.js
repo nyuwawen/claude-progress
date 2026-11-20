@@ -109,7 +109,7 @@ describe('process contract', () => {
     pre('Read', { file_path: 'a.txt' })
     run('post', { session_id: 'S1', tool_name: 'Read', tool_use_id: 't1' })
     run('stop', { session_id: 'S1' })
-    assert.deepEqual(fs.readdirSync(dir).sort(), ['history.json', 'state.json'])
+    assert.deepEqual(fs.readdirSync(dir).sort(), ['history.json', 'jobs.jsonl', 'state.json'])
   })
 })
 

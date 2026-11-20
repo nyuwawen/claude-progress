@@ -10,3 +10,7 @@ state.json
 state.lock
 history.json
 window.json
+
+# Videos and release builds never go in the repo (they would bloat the ZIP download)
+*.mp4
+dist/

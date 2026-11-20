@@ -21,9 +21,14 @@ See what Claude is doing right now, where the time went, and roughly how long is
 
 ## 🚀 Quick start
 
-1. **Download** this repo: green **Code** button → **Download ZIP**, then unzip it.
-2. **Double-click `Install.cmd`.**
+1. **Download** `claude-progress-<version>.zip` and its `.sha256` from [**Releases**](https://github.com/nyuwawen/claude-progress/releases/latest). Optional check, it prints **True** if the download matches:
+   ```powershell
+   (Get-FileHash .\claude-progress-1.0.0.zip -Algorithm SHA256).Hash -eq (Get-Content .\claude-progress-1.0.0.zip.sha256).Split(' ')[0]
+   ```
+2. **Unzip it** (right-click → Extract All) and **double-click `Install.cmd`**. It lists every change it will make; type **Y** and press Enter (anything else changes nothing).
 3. **Restart Claude** (or open a new session). That's it: the window appears whenever Claude works.
+
+No release yet, or want the latest code? The green **Code** button → **Download ZIP** works the same way.
 
 > [!TIP]
 > Want to see it first? Double-click **`Try Demo.cmd`**. It plays two fake chats and installs nothing.

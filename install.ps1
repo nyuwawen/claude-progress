@@ -1,10 +1,45 @@
 ﻿# Claude Progress - installer. Run Install.cmd (double-click) rather than this file directly.
-param([switch]$Outside)
+#   -Yes      skip the question (for scripted installs); the list of changes is still shown
+#   -Outside  internal: the second half of an install started from inside the Claude app
+param([switch]$Outside, [switch]$Yes)
 $ErrorActionPreference = 'Stop'
 $src = $PSScriptRoot
+$version = try { (Get-Content (Join-Path $src 'VERSION') -ErrorAction Stop | Select-Object -First 1).Trim() } catch { 'dev' }
 # Lives next to the timing data. Not under AppData: when this runs from inside the Claude desktop
 # app (a packaged app), Windows redirects AppData writes into a private copy only Claude can see.
-$dest = Join-Path $env:USERPROFILE '.claude-progress\app'
+$data = Join-Path $env:USERPROFILE '.claude-progress'
+$dest = Join-Path $data 'app'
+$startedAt = [DateTimeOffset]::UtcNow.ToUnixTimeMilliseconds()
+
+# Before anything else: say exactly what will change, and wait for a Yes. Declining changes nothing.
+if (-not $Outside) {
+  $nodeFound = (Get-Command node -ErrorAction SilentlyContinue).Source
+  if (-not $nodeFound) { Write-Host 'Node.js is required (https://nodejs.org). Install it, then run this again. Nothing was changed.' -ForegroundColor Red; exit 1 }
+  $settingsFile = Join-Path $env:USERPROFILE '.claude\settings.json'
+  Write-Host ''
+  Write-Host "Claude Progress $version - this install will:" -ForegroundColor Cyan
+  Write-Host "  1. Copy the app to $dest"
+  Write-Host "  2. Add 8 hooks to $settingsFile"
+  Write-Host '     (SessionStart, UserPromptSubmit, PreToolUse, PostToolUse, PostToolUseFailure, Stop, SubagentStart, SubagentStop).'
+  Write-Host '     A backup is saved first as settings.json.before-claude-progress.bak. Your other settings and hooks are kept.'
+  Write-Host '  3. Add Start menu shortcuts (app, demo, uninstaller) and a shortcut that opens the window when you sign in'
+  Write-Host "  4. Add a Task Scheduler entry 'Claude Progress' that reopens the window when Claude starts (runs as you, no admin)"
+  Write-Host '  5. Open the window now'
+  Write-Host 'It never: asks for admin rights, sends anything over the network, or changes any other setting.' -ForegroundColor DarkGray
+  Write-Host "Node.js: $nodeFound" -ForegroundColor DarkGray
+  Write-Host 'To undo it all later: Start menu > Claude Progress > Uninstall Claude Progress.' -ForegroundColor DarkGray
+  Write-Host ''
+  if (-not $Yes) {
+    # No answer (e.g. run without a console) counts as No.
+    # The question is printed either way, so whoever (or whatever) answers has seen it.
+    $answer = if ([Console]::IsInputRedirected) { Write-Host 'Install? Type Y and press Enter (anything else cancels)'; [Console]::In.ReadLine() } else { Read-Host 'Install? Type Y and press Enter (anything else cancels)' }
+    if ("$answer".Trim() -notmatch '^(y|yes)$') { Write-Host 'Cancelled. Nothing was changed.' -ForegroundColor Yellow; exit 0 }
+  }
+  # Install-timing check for testers: when the install started (the window adds when its first card appeared).
+  New-Item -ItemType Directory -Force -Path $data | Out-Null
+  $timing = [ordered]@{ version = $version; installerStartedAt = $startedAt; firstCardAt = $null }
+  [IO.File]::WriteAllText((Join-Path $data 'install-timing.json'), ($timing | ConvertTo-Json -Compress))
+}
 
 # Run from inside a packaged app (e.g. Claude ran this)? Finish the install outside it, through
 # Task Scheduler, so shortcuts and files land where Windows itself can see them.
@@ -17,10 +52,14 @@ if (-not $Outside -and [CP.Pkg]::GetCurrentPackageFullName([ref]$len, $null) -ne
   # Escape for a single-quoted string the way PowerShell itself does (this also covers ’ ‘ quotes).
   $a = New-ScheduledTaskAction -Execute 'powershell.exe' -Argument "-NoProfile -ExecutionPolicy Bypass -Command `"& '$([System.Management.Automation.Language.CodeGeneration]::EscapeSingleQuotedStringContent($PSCommandPath))' -Outside *> '$([System.Management.Automation.Language.CodeGeneration]::EscapeSingleQuotedStringContent($logFile))'`""
   Register-ScheduledTask -TaskName 'Claude Progress Setup' -Action $a -Force | Out-Null
-  Start-ScheduledTask -TaskName 'Claude Progress Setup'
-  Start-Sleep -Seconds 2
-  while ((Get-ScheduledTask -TaskName 'Claude Progress Setup').State -eq 'Running') { Start-Sleep -Milliseconds 500 }
-  Unregister-ScheduledTask -TaskName 'Claude Progress Setup' -Confirm:$false
+  try {
+    Start-ScheduledTask -TaskName 'Claude Progress Setup'
+    Start-Sleep -Seconds 2
+    while ((Get-ScheduledTask -TaskName 'Claude Progress Setup').State -eq 'Running') { Start-Sleep -Milliseconds 500 }
+  } finally {
+    # Removed even if this is stopped with Ctrl+C, so no leftover task.
+    Unregister-ScheduledTask -TaskName 'Claude Progress Setup' -Confirm:$false -ErrorAction SilentlyContinue
+  }
   if (Test-Path $logFile) { Get-Content $logFile }
   exit 0
 }
@@ -37,7 +76,7 @@ Get-CimInstance Win32_Process -Filter "Name='powershell.exe'" |
 New-Item -ItemType Directory -Force -Path $dest | Out-Null
 # Older versions installed to AppData\Local\ClaudeProgress
 Remove-Item (Join-Path $env:LOCALAPPDATA 'ClaudeProgress') -Recurse -Force -ErrorAction SilentlyContinue
-foreach ($f in 'hook.js','demo.js','settings-hooks.js','ClaudeProgress.ps1','chat-watch.ps1','uninstall.ps1','Uninstall.cmd') {
+foreach ($f in 'hook.js','demo.js','settings-hooks.js','ClaudeProgress.ps1','chat-watch.ps1','uninstall.ps1','Uninstall.cmd','VERSION') {
   Copy-Item (Join-Path $src $f) (Join-Path $dest $f) -Force
 }
 
