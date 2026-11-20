@@ -1,6 +1,7 @@
 // Claude Progress - hook script.
 // Claude Code runs this on: UserPromptSubmit (turn starts), PreToolUse (step starts),
-// PostToolUse / PostToolUseFailure (step ends) and Stop (turn ends). It reads the event
+// PostToolUse / PostToolUseFailure (step ends), SubagentStart / SubagentStop (a helper agent
+// starts / finishes) and Stop (turn ends). It reads the event
 // JSON from stdin and updates two files in %USERPROFILE%\.claude-progress:
 //   state.json   - what is running now plus this turn's activity log (the window reads it)
 //   history.json - how long past steps took (used for the time estimates)
@@ -147,18 +148,42 @@ const main = event => {
     key = safeKey(key)
     history[key] = [...(Array.isArray(history[key]) ? history[key] : []), ms].slice(-KEEP)
   }
+  // Helper agents (subagents). A helper's own row carries `agent` (its id) and stays open until
+  // SubagentStop, even when it runs in the background and its Agent tool call returned at once.
+  // Steps the helper itself runs carry `by` (its id). A helper silent for 2 hours is forgotten.
+  const isHelper = v => isObj(v) && typeof v.agent === 'string'
+  for (const [id, v] of Object.entries(s.steps)) {
+    if (!isObj(v) || (v.agent || v.by) && now - (Number(v.startedAt) || 0) > 7200000) delete s.steps[id]
+  }
+  const helpersLeft = () => Object.values(s.steps).some(isHelper)
+  const agentId = e.agent_id ? String(e.agent_id) : null
+  const agentType = cut(e.agent_type || 'helper', 30)
+
   const startTurn = () => {
     s.turnStartedAt = now
     s.turnEstimateMs = median(history[TURN])
-    s.steps = {}
+    // Helpers still working from the last turn keep going (with their steps).
+    s.steps = Object.fromEntries(Object.entries(s.steps).filter(([, v]) => v.agent || v.by))
     s.log = []
     s.finishedAt = null
+    s.waiting = false
   }
   const finishStep = (id, step) => {
     remember(step.key, now - step.startedAt)
     s.log.push({ ...step, endedAt: now, ok: !failed })
     s.log = s.log.slice(-LOG_MAX)
     delete s.steps[id]
+  }
+  const endTurn = () => {
+    if (s.turnStartedAt) {
+      s.lastTurnMs = now - s.turnStartedAt
+      s.lastTurnStartedAt = s.turnStartedAt
+      remember(TURN, s.lastTurnMs)
+    }
+    for (const [id, step] of Object.entries(s.steps)) finishStep(id, step)
+    s.turnStartedAt = null
+    s.finishedAt = now
+    s.waiting = false
   }
 
   if (event === 'prompt') {
@@ -168,34 +193,51 @@ const main = event => {
     if (!s.turnStartedAt) startTurn()
     const d = describe(e.tool_name, e.tool_input)
     const id = safeKey(String(e.tool_use_id || `${d.key}-${now}`))
-    s.steps[id] = { ...d, startedAt: now, estimateMs: median(history[safeKey(d.key)]) }
+    const step = { ...d, startedAt: now, estimateMs: median(history[safeKey(d.key)]) }
+    if (agentId) { step.by = agentId; step.label = cut(`${agentType} › ${d.label}`, 60) }
+    if (d.cat === 'agent' && isObj(e.tool_input)) step.wants = String(e.tool_input.subagent_type || '')
+    s.steps[id] = step
   } else if (event === 'post') {
     const id = e.tool_use_id ? safeKey(String(e.tool_use_id)) : null
     if (id && Object.hasOwn(s.steps, id)) {
-      finishStep(id, s.steps[id])
+      // A helper's Agent call returns at once when it runs in the background: keep its row open.
+      if (!isHelper(s.steps[id])) finishStep(id, s.steps[id])
     } else {
-      // No id match: close the oldest running step of the same kind.
-      const { key } = describe(e.tool_name, e.tool_input)
-      const found = Object.entries(s.steps).find(([, v]) => v.key === key)
+      // No id match: close the oldest running step of the same kind. Never a helper's row, and not
+      // for an Agent call: a finished helper's call would otherwise close another helper's.
+      const { key, cat } = describe(e.tool_name, e.tool_input)
+      if (cat === 'agent') return save()
+      const found = Object.entries(s.steps).find(([, v]) => v.key === key && !isHelper(v) && (v.by || null) === agentId)
       if (found) finishStep(found[0], found[1])
     }
+  } else if (event === 'agent-start' && agentId && e.agent_type) { // no type: Claude's own internal agents
+    if (!s.turnStartedAt) startTurn()
+    const label = `Helper agent (${agentType})`
+    // Claim the Agent call that launched it (same type first, then any unclaimed one).
+    const calls = Object.entries(s.steps).filter(([, v]) => v.cat === 'agent' && !v.agent && !v.by)
+    const mine = calls.find(([, v]) => v.wants && v.wants.toLowerCase() === agentType.toLowerCase()) || calls.find(([, v]) => !v.wants) || calls[0]
+    if (mine) Object.assign(mine[1], { agent: agentId, label })
+    else s.steps[safeKey(`agent-${agentId}`)] = { key: `agent:${agentType}`, cat: 'agent', label, detail: '', startedAt: now, estimateMs: null, agent: agentId }
+  } else if (event === 'agent-stop' && agentId) {
+    for (const [id, v] of Object.entries(s.steps)) if (v.agent === agentId || v.by === agentId) finishStep(id, v)
+    if (s.waiting && !helpersLeft()) endTurn()
   } else if (event === 'stop') {
-    if (s.turnStartedAt) {
-      s.lastTurnMs = now - s.turnStartedAt
-      s.lastTurnStartedAt = s.turnStartedAt
-      remember(TURN, s.lastTurnMs)
-    }
-    for (const [id, step] of Object.entries(s.steps)) finishStep(id, step)
-    s.turnStartedAt = null
-    s.finishedAt = now
+    // The reply is done, but background helpers may still be working: the job ends when they do.
+    if (helpersLeft()) {
+      for (const [id, step] of Object.entries(s.steps)) if (!step.agent && !step.by) finishStep(id, step)
+      s.waiting = true
+    } else endTurn()
   }
 
-  state.sessions[sid] = s
-  // Forget sessions untouched for a day.
-  for (const [k, v] of Object.entries(state.sessions)) if (now - (v.updatedAt || 0) > 86400000) delete state.sessions[k]
-  state.updatedAt = now
-  writeJson(STATE, state)
-  writeJson(HISTORY, history)
+  save()
+  function save() {
+    state.sessions[sid] = s
+    // Forget sessions untouched for a day.
+    for (const [k, v] of Object.entries(state.sessions)) if (now - (v.updatedAt || 0) > 86400000) delete state.sessions[k]
+    state.updatedAt = now
+    writeJson(STATE, state)
+    writeJson(HISTORY, history)
+  }
 }
 
 // Several chats can fire hooks at the same moment: take a short lock so their

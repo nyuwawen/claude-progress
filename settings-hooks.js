@@ -49,6 +49,8 @@ if (action === 'add') {
   add('PostToolUse', 'post', '*')
   add('PostToolUseFailure', 'post', '*')
   add('Stop', 'stop')
+  add('SubagentStart', 'agent-start') // a helper agent starts or finishes (also background ones)
+  add('SubagentStop', 'agent-stop')
 }
 
 if (Object.keys(hooks).length > 0) settings.hooks = hooks

@@ -11,7 +11,7 @@ const SCRIPT = path.resolve(__dirname, '..', '..', 'settings-hooks.js')
 const NODE = 'C:\\Program Files\\nodejs\\node.exe'
 const HOOK = 'C:\\Users\\me\\.claude-progress\\hook.js'
 const MARK = 'claude-progress-hook'
-const EVENTS = ['SessionStart', 'UserPromptSubmit', 'PreToolUse', 'PostToolUse', 'PostToolUseFailure', 'Stop']
+const EVENTS = ['SessionStart', 'UserPromptSubmit', 'PreToolUse', 'PostToolUse', 'PostToolUseFailure', 'Stop', 'SubagentStart', 'SubagentStop']
 let home, file
 
 const run = (...args) => {
@@ -43,15 +43,15 @@ test('sandbox: script resolves settings.json inside the temp home', () => {
   assert.ok(fs.existsSync(file))
 })
 
-test('add on a fresh profile creates settings.json with 6 marked hooks', () => {
+test('add on a fresh profile creates settings.json with 8 marked hooks', () => {
   const r = run('add', NODE, HOOK)
   assert.equal(r.status, 0)
   assert.match(r.stdout, /Hooks added to/)
   const s = read()
   assert.deepEqual(Object.keys(s.hooks).sort(), [...EVENTS].sort())
   const mine = ours(s)
-  assert.equal(mine.length, 6)
-  const arg = { SessionStart: 'session', UserPromptSubmit: 'prompt', PreToolUse: 'pre', PostToolUse: 'post', PostToolUseFailure: 'post', Stop: 'stop' }
+  assert.equal(mine.length, 8)
+  const arg = { SessionStart: 'session', UserPromptSubmit: 'prompt', PreToolUse: 'pre', PostToolUse: 'post', PostToolUseFailure: 'post', Stop: 'stop', SubagentStart: 'agent-start', SubagentStop: 'agent-stop' }
   for (const { ev, g, h } of mine) {
     assert.equal(h.type, 'command')
     assert.equal(h.timeout, 10)
@@ -68,14 +68,14 @@ test('add is idempotent: running twice does not duplicate', () => {
   const r = run('add', NODE, HOOK)
   assert.equal(r.status, 0)
   assert.equal(fs.readFileSync(file, 'utf8'), first)
-  assert.equal(ours(read()).length, 6)
+  assert.equal(ours(read()).length, 8)
 })
 
 test('add with a new path replaces the old entries instead of adding more', () => {
   run('add', NODE, HOOK)
   run('add', 'D:\\node\\node.exe', 'D:\\cp\\hook.js')
   const mine = ours(read())
-  assert.equal(mine.length, 6)
+  assert.equal(mine.length, 8)
   for (const { h } of mine) assert.ok(h.command.startsWith('"D:/node/node.exe" "D:/cp/hook.js"'))
 })
 
@@ -102,7 +102,7 @@ test('add keeps unrelated settings and user hooks', () => {
   assert.deepEqual(s.hooks.PreToolUse[0], u.hooks.PreToolUse[0])
   assert.equal(s.hooks.PreToolUse.length, 2)
   assert.deepEqual(s.hooks.Stop[0], u.hooks.Stop[0])
-  assert.equal(ours(s).length, 6)
+  assert.equal(ours(s).length, 8)
 })
 
 test('add writes a .bak with the exact previous text', () => {
@@ -163,13 +163,13 @@ for (const action of ['add', 'remove']) {
   })
 }
 
-test('add -> remove -> add round trip leaves exactly 6 marked hooks', () => {
+test('add -> remove -> add round trip leaves exactly 8 marked hooks', () => {
   write(userSettings())
   run('add', NODE, HOOK)
   run('remove')
   run('add', NODE, HOOK)
   const s = read()
-  assert.equal(ours(s).length, 6)
+  assert.equal(ours(s).length, 8)
   assert.equal(s.hooks.PreToolUse.length, 2)
   assert.equal(s.model, 'opus')
 })

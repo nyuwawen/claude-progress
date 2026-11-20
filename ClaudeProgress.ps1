@@ -831,6 +831,13 @@ function Update-ActiveCard($card, $sid, $s, [double]$now, [int]$maxRows) {
     $note = if ($te.bumps -gt 0 -or $turnEst -gt $te.original + 1000) { ('  ·  re-estimated (usually {0})' -f (Format-Ms $te.original)) } else { '' }
     $card.TurnText.Text = Join-Phrases ('{0} elapsed  ·  about {1} left  ·  {2} steps done{3}' -f (Format-Ms $spent), (Format-Ms ($turnEst - $spent)), (Get-List $s.log).Count, $note)
   }
+  # Helper agents (subagents) still working, including background ones after the reply is done.
+  $helpers = 0
+  if ($s.steps) { $helpers = @($s.steps.PSObject.Properties | Where-Object { $_.Value.agent }).Count }
+  if ($helpers -gt 0) {
+    $word = if ($helpers -eq 1) { '1 helper agent' } else { "$helpers helper agents" }
+    $card.TurnText.Text += Join-Phrases $(if ($s.waiting) { "  ·  reply done, waiting for $word" } else { "  ·  $word working" })
+  }
   Draw-Activity $card $tl.rows $maxRows
 
   # Notice: grows open while it applies, then folds away.

@@ -37,6 +37,7 @@ See what Claude is doing right now, where the time went, and roughly how long is
 | ⏱️ **Honest estimates** | "Time left" is learned from how long similar steps took before. It never sticks at 99%: when a step runs long, the bar eases back, the extra time moves onto that step, and a note tells you why. |
 | 🗂️ **One card per chat** | Every Claude chat that's working gets its own progress card, labelled with its folder and your message. |
 | 💬 **Code and regular chats** | Claude Code sessions are tracked step by step through hooks. Regular chats in the Claude desktop app get a card too, with the chat name, its current step and a learned estimate. |
+| 🤝 **Helper agents** | When Claude sends out helper agents (subagents), each shows as its own running step, and the steps a helper runs are labelled with its name ("Explore › Searching code"). Background helpers keep the job open until they finish, so the card says "reply done, waiting for 1 helper agent" instead of looking finished. |
 | ✅ **Activity list** | Each step with ✓ or ✗, how long it took, and what's running now. |
 | 🎨 **Themes, sizes, modes** | Normal, DADA and REN themes · Small to Extra large (or Ctrl + scroll) · Saver, Neutral and Full power. |
 | ➖ **Minimize** | Folds down into a slim bar toward the button you clicked, with the percent, time left and a thin progress line. |
@@ -112,7 +113,8 @@ The installer registers `hook.js` as a Claude Code [hook](https://code.claude.co
 | `UserPromptSubmit` | a job starts |
 | `PreToolUse` | a step starts |
 | `PostToolUse` / `PostToolUseFailure` | a step ends (or fails) |
-| `Stop` | the job is finished |
+| `SubagentStart` / `SubagentStop` | a helper agent starts / finishes |
+| `Stop` | Claude's reply is finished (the job ends once any background helpers are done too) |
 
 `hook.js` records what's happening in `%USERPROFILE%\.claude-progress\state.json` and keeps the last 12 durations of each kind of step in `history.json`. A file lock keeps several chats from overwriting each other. The hook never prints anything and always exits successfully, so it can never block or slow down Claude.
 
@@ -123,7 +125,7 @@ The window (`ClaudeProgress.ps1`) is WPF running in Windows PowerShell 5.1, so t
 <summary><b>What the installer changes</b></summary>
 
 - Copies the app to `%USERPROFILE%\.claude-progress\app`
-- Adds six hooks to `~/.claude/settings.json`. A backup is saved first as `settings.json.before-claude-progress.bak`, and your other settings and hooks are kept. Running it twice doesn't duplicate anything.
+- Adds eight hooks to `~/.claude/settings.json`. A backup is saved first as `settings.json.before-claude-progress.bak`, and your other settings and hooks are kept. Running it twice doesn't duplicate anything.
 - Adds Start menu shortcuts (**Claude Progress**, **Claude Progress Demo**, **Uninstall Claude Progress**)
 - Starts the app with Windows, and adds a **Claude Progress** task in Task Scheduler that the hook uses to reopen the window whenever a Claude session starts and it isn't running
 
