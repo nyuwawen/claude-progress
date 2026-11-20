@@ -37,13 +37,40 @@ See what Claude is doing right now, where the time went, and roughly how long is
 | ⏱️ **Honest estimates** | "Time left" is learned from how long similar steps took before. It never sticks at 99%: when a step runs long, the bar eases back, the extra time moves onto that step, and a note tells you why. |
 | 🗂️ **One card per chat** | Every Claude chat that's working gets its own progress card, labelled with its folder and your message. |
 | 💬 **Code and regular chats** | Claude Code sessions are tracked step by step through hooks. Regular chats in the Claude desktop app get a card too, with the chat name, its current step and a learned estimate. |
-| 🤝 **Helper agents** | When Claude sends out helper agents (subagents), a **Team** view shows who is doing what, as a small pipeline: "UI Designer · finished designing", then "Reviewer · is checking · Check the hero matches the brand", each with the step it is on now and how long it has worked. Steps a helper runs are labelled with its name ("Explore › Searching code"). Background helpers keep the job open until they finish, so the card says "reply done, waiting for 1 helper agent" instead of looking finished. |
+| 🤝 **Helper agents** | When Claude sends out helper agents (subagents), a [**Team** view](#-helper-agents-the-team-view) shows who is doing what, as a small pipeline: "UI Designer · finished designing", then "Reviewer · is checking · Check the hero matches the brand", each with the step it is on now and how long it has worked. Steps a helper runs are labelled with its name ("Explore › Searching code"). Background helpers keep the job open until they finish, so the card says "reply done, waiting for 1 helper agent" instead of looking finished. |
 | ✅ **Activity list** | Each step with ✓ or ✗, how long it took, and what's running now. |
 | 🎨 **Themes, sizes, modes** | Normal, DADA and REN themes · Small to Extra large (or Ctrl + scroll) · Saver, Neutral and Full power. |
 | ➖ **Minimize** | Folds down into a slim bar toward the button you clicked, with the percent, time left and a thin progress line. |
 | 🌊 **Smooth motion** | Bars glide continuously; new steps, notices and chats grow open and enter in a gentle stagger instead of popping in. |
 | 🔢 **Calm numbers** | Fixed-width digits, so timers and percentages count without wobbling, and status lines never strand a lone word. |
 | 🔒 **Private** | Everything stays on your computer. Nothing is sent anywhere. |
+
+## 🤝 Helper agents: the Team view
+
+When Claude sends out helper agents (subagents), the card gets a **Team** section that shows who is doing what, as a small pipeline in the order they started. Each helper shows its role, its task, the step it is on right now and how long it has been working. Finished helpers turn into a ✓ with their step count, and background helpers keep the job open until they are done ("reply done, waiting for 1 helper agent").
+
+<p align="center"><img src="screenshots/team-view.png" alt="Team view: a planner and a designer have finished, a reviewer is checking the design and a security engineer is auditing the form" width="440"></p>
+
+Each helper gets a role from its name and its task, with its own icon and wording:
+
+| Role | Says | For agents like |
+| --- | --- | --- |
+| 🎨 design | is designing | UI Designer, Game Designer |
+| 👁 review | is checking | reviewers, finish-gate checks, compliance checkers |
+| 🔒 security | is securing | security engineers, pen-testers |
+| 🐞 test | is testing | test runners, QA |
+| ☰ plan | is planning | Plan, architects, strategists |
+| 🔍 research | is researching | Explore, researchers, doc lookups |
+| 📚 academic | is studying | academic researchers, literature reviews |
+| 🎓 teach | is teaching | tutors, lesson and quiz writers |
+| 📊 data | is analysing | data analysts, analytics reporters |
+| ✏️ write | is writing | content creators, release notes, summaries |
+| { } build | is building | software engineers, general-purpose helpers |
+| 🎮 game | is making the game | game developers |
+| ☁ ops | is deploying | DevOps, release and CI work |
+| 📣 marketing | is promoting | SEO, social, campaigns |
+| 👥 manage | is coordinating | project and product managers |
+| 🤖 other | is working | anything else |
 
 ## 🎨 Themes
 
