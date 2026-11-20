@@ -777,6 +777,14 @@ $ROLES = @{
   research = @{ cat = 'read';   icon = [char]0xE721; now = 'is researching'; done = 'finished researching' }
   write    = @{ cat = 'edit';   icon = [char]0xE70F; now = 'is writing';     done = 'finished writing' }
   build    = @{ cat = 'edit';   icon = [char]0xE943; now = 'is building';    done = 'finished building' }
+  security = @{ cat = 'run';    icon = [char]0xE72E; now = 'is securing';    done = 'finished securing' }
+  manage   = @{ cat = 'agent';  icon = [char]0xE716; now = 'is coordinating'; done = 'finished coordinating' }
+  game     = @{ cat = 'render'; icon = [char]0xE7FC; now = 'is making the game'; done = 'finished the game work' }
+  academic = @{ cat = 'read';   icon = [char]0xE8F1; now = 'is studying';    done = 'finished studying' }
+  teach    = @{ cat = 'read';   icon = [char]0xE7BE; now = 'is teaching';    done = 'finished teaching' }
+  data     = @{ cat = 'web';    icon = [char]0xE9D2; now = 'is analysing';   done = 'finished analysing' }
+  ops      = @{ cat = 'run';    icon = [char]0xE753; now = 'is deploying';   done = 'finished deploying' }
+  marketing = @{ cat = 'render'; icon = [char]0xE789; now = 'is promoting';  done = 'finished promoting' }
   other    = @{ cat = 'agent';  icon = [char]0xE99A; now = 'is working';     done = 'finished' }
 }
 $MAX_TEAM = 5

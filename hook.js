@@ -50,14 +50,23 @@ const cut = (s, n) => {
 const safeKey = k => (k === '__proto__' || k in Object.prototype) ? `_${k}` : k
 // What a helper agent is doing, for the window's Team view. Its type decides first
 // ("UI Finish-Gate Reviewer" is checking, even though it is about UI), then its task.
+// The order matters: the first match wins, so specific roles come before broad ones.
 const ROLES = [
-  ['review', /review|check|verif|audit|gate|\bqa\b|critic|inspect|align|approv|guardian/i],
-  ['test', /test|secur|pen.?test|fuzz/i],
-  ['design', /design|\bui\b|\bux\b|visual|brand|layout|mock.?up|figma|image|creative|whims|illustrat|story/i],
+  ['security', /secur|pen.?test|vuln|threat|exploit|harden|encrypt|privacy|red.?team|\bsoc\b|\bcve/i],
+  ['review', /review|check|verif|audit|gate|\bqa\b|critic|inspect|align|approv|guardian|complian/i],
+  ['test', /\btest|fuzz|\be2e\b|regression/i],
+  ['manage', /project.?manag|program.?manag|product.?manag|\bpm\b|producer|scrum|sprint|coordinat|roadmap|backlog|stand.?up|stakeholder|\bmanag(er|ement)\b|orchestrat/i],
+  ['game', /\bgame|gameplay|unity|unreal|godot|level.?design|sprite|\bnpc|\brpg\b/i],
+  ['academic', /academ|scholar|thesis|dissertation|literature|citation|peer.?review|journal|scientific|\bpaper/i],
+  ['teach', /teach|tutor|educat|lesson|course|curricul|lectur|quiz|flashcard|student|mentor|coach|explain to/i],
+  ['data', /\bdata|analyt|analyst|metric|statist|\bsql\b|dashboard|spreadsheet|\bbi\b|forecast|\bkpi/i],
+  ['ops', /devops|\bops\b|deploy|release(?!.?notes?)|infra|kubernetes|\bk8s|docker|\bci\b|\bcd\b|pipeline|server|cloud|\bsre\b/i],
+  ['marketing', /market|\bseo\b|campaign|\bads?\b|social|brand|growth|tiktok|instagram|copywrit|newsletter|promot|influenc|\bpr\b/i],
+  ['design', /design|\bui\b|\bux\b|visual|layout|mock.?up|figma|image|creative|whims|illustrat|story/i],
   ['plan', /plan|architect|strateg/i],
   ['research', /explor|research|search|find|investig|look|guide|fetch|analy|read|scan/i],
-  ['write', /writ|content|copy|\bdoc|draft/i],
-  ['build', /build|implement|code|fix|develop|engineer|refactor|migrat|install|make|creat/i],
+  ['write', /writ|content|copy|\bdoc|draft|summar|\bnotes\b|blog|article/i],
+  ['build', /build|implement|code|fix|develop|\bdev\b|engineer|refactor|migrat|install|make|creat/i],
 ]
 const roleOf = (type, task) => {
   const hit = ROLES.find(([, re]) => re.test(type)) || ROLES.find(([, re]) => re.test(task))
