@@ -124,3 +124,48 @@ test("a finished helper's late Agent result never closes another helper's row", 
   send(d, 'post', { tool_name: 'Agent', tool_use_id: 'A1', tool_input: {} })
   assert.ok(sess(d).steps.A2, 'second Agent call still running')
 })
+
+test('each helper gets a role for the Team view: its type first, then its task', () => {
+  const cases = [
+    ['UI Designer', 'Design the hero', 'design'],
+    ['UI Finish-Gate Reviewer', 'Check the hero matches the brand', 'review'],
+    ['Explore', 'Find the form code', 'research'],
+    ['Plan', 'Plan the refactor', 'plan'],
+    ['general-purpose', 'Build the hero section in React', 'build'],
+    ['general-purpose', 'Verify the design aligns with the guide', 'review'],
+    ['general-purpose', 'Pen-test the installer', 'test'],
+    ['general-purpose', 'Write the release notes', 'write'],
+    ['general-purpose', 'Something else entirely', 'other'],
+  ]
+  for (const [type, task, role] of cases) {
+    const d = tmp()
+    send(d, 'prompt', { prompt: 'go' })
+    send(d, 'pre', { tool_name: 'Agent', tool_use_id: 'A', tool_input: { description: task, subagent_type: type } })
+    send(d, 'agent-start', { agent_id: 'ag', agent_type: type })
+    const a = sess(d).steps.A
+    assert.strictEqual(a.role, role, `${type} / ${task}`)
+    assert.strictEqual(a.who, type)
+  }
+})
+
+test('role and name stay on the finished helper in the log', () => {
+  const d = tmp()
+  send(d, 'prompt', { prompt: 'go' })
+  launch(d, 'A1', 'UI Designer')
+  send(d, 'agent-stop', { agent_id: 'ag-A1', agent_type: 'UI Designer' })
+  const done = sess(d).log.at(-1)
+  assert.strictEqual(done.role, 'design'); assert.strictEqual(done.who, 'UI Designer'); assert.strictEqual(done.agent, 'ag-A1')
+})
+
+test("a helper's step count survives a new turn clearing the log", () => {
+  const d = tmp()
+  send(d, 'prompt', { prompt: 'one' })
+  launch(d, 'A1', 'UI Designer', { background: true })
+  for (const id of ['w1', 'w2']) {
+    send(d, 'pre', { tool_name: 'Write', tool_use_id: id, tool_input: { file_path: 'card.html' }, agent_id: 'ag-A1', agent_type: 'UI Designer' })
+    send(d, 'post', { tool_name: 'Write', tool_use_id: id, agent_id: 'ag-A1', agent_type: 'UI Designer' })
+  }
+  send(d, 'prompt', { prompt: 'two' })
+  send(d, 'agent-stop', { agent_id: 'ag-A1', agent_type: 'UI Designer' })
+  assert.strictEqual(sess(d).log.find(x => x.agent === 'ag-A1').done, 2)
+})

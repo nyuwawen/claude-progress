@@ -214,6 +214,11 @@ $cardXaml = @'
       <TextBlock x:Name="TurnText" Typography.NumeralAlignment="Tabular" LineHeight="17" LineStackingStrategy="BlockLineHeight" Foreground="{DynamicResource TextSub}" FontFamily="Segoe UI" FontSize="11.5" Margin="0,5,0,0" TextWrapping="Wrap"/>
     </StackPanel>
 
+    <StackPanel x:Name="TeamPanel" Margin="0,11,0,0" Visibility="Collapsed">
+      <TextBlock x:Name="TeamHead" Text="TEAM" Foreground="{DynamicResource TextMuted}" FontFamily="Segoe UI" FontSize="10" FontWeight="SemiBold"/>
+      <StackPanel x:Name="Team" Margin="0,6,0,0"/>
+    </StackPanel>
+
     <StackPanel x:Name="StepPanel" Margin="0,9,0,0">
       <DockPanel>
         <TextBlock x:Name="StepPct" DockPanel.Dock="Right" Typography.NumeralAlignment="Tabular" MinWidth="34" TextAlignment="Right" Foreground="{DynamicResource TextMain}" FontFamily="Segoe UI" FontSize="11" FontWeight="SemiBold"/>
@@ -237,7 +242,7 @@ $cardXaml = @'
   </StackPanel>
 </Border>
 '@
-$cardNames = 'Dot','Clock','Chat','NowPanel','NowLabel','NowDetail','TurnPct','Seg','TurnText','StepPanel','StepPct','StepHead','StepTrack','StepFill','StepText','Notice','NoticeText','DetailPanel','Activity'
+$cardNames = 'Dot','Clock','Chat','NowPanel','NowLabel','NowDetail','TurnPct','Seg','TurnText','TeamPanel','TeamHead','Team','StepPanel','StepPct','StepHead','StepTrack','StepFill','StepText','Notice','NoticeText','DetailPanel','Activity'
 
 $window = [Windows.Markup.XamlReader]::Load((New-Object System.Xml.XmlNodeReader $windowXaml))
 $ui = @{}
@@ -632,11 +637,11 @@ function Get-Estimate($card, [string]$id, [double]$spent, $base, [string]$label,
 # Builds timeline segments and activity rows for one turn.
 function Get-Timeline($s, [double]$startAt, [double]$endAt, [double]$now, [bool]$running) {
   $items = @()
-  foreach ($l in (Get-List $s.log)) { $items += [pscustomobject]@{ start = [double]$l.startedAt; end = [double]$l.endedAt; cat = $l.cat; label = $l.label; detail = $l.detail; ok = $l.ok; live = $false; id = ''; base = $null } }
+  foreach ($l in (Get-List $s.log)) { $items += [pscustomobject]@{ start = [double]$l.startedAt; end = [double]$l.endedAt; cat = $l.cat; label = $l.label; detail = $l.detail; ok = $l.ok; live = $false; id = ''; base = $null; agent = [bool]$l.agent } }
   if ($running -and $s.steps) {
     foreach ($p in $s.steps.PSObject.Properties) {
       $st = $p.Value
-      $items += [pscustomobject]@{ start = [double]$st.startedAt; end = $now; cat = $st.cat; label = $st.label; detail = $st.detail; ok = $true; live = $true; id = $p.Name; base = $st.estimateMs }
+      $items += [pscustomobject]@{ start = [double]$st.startedAt; end = $now; cat = $st.cat; label = $st.label; detail = $st.detail; ok = $true; live = $true; id = $p.Name; base = $st.estimateMs; agent = [bool]$st.agent }
     }
   }
   $items = @($items | Sort-Object start)
@@ -762,6 +767,128 @@ function Draw-Activity($card, $rows, [int]$max) {
   $card.DetailPanel.Visibility = if ($prefs.details -and $show.Count -gt 0) { 'Visible' } else { 'Collapsed' }
 }
 
+# ---------- Team view: what each helper agent (subagent) is doing ----------
+# role (set by hook.js) -> colour (a step category), icon (Segoe MDL2 Assets) and words.
+$ROLES = @{
+  design   = @{ cat = 'render'; icon = [char]0xE790; now = 'is designing';   done = 'finished designing' }
+  review   = @{ cat = 'web';    icon = [char]0xE7B3; now = 'is checking';    done = 'finished checking' }
+  test     = @{ cat = 'run';    icon = [char]0xEBE8; now = 'is testing';     done = 'finished testing' }
+  plan     = @{ cat = 'agent';  icon = [char]0xE8FD; now = 'is planning';    done = 'finished planning' }
+  research = @{ cat = 'read';   icon = [char]0xE721; now = 'is researching'; done = 'finished researching' }
+  write    = @{ cat = 'edit';   icon = [char]0xE70F; now = 'is writing';     done = 'finished writing' }
+  build    = @{ cat = 'edit';   icon = [char]0xE943; now = 'is building';    done = 'finished building' }
+  other    = @{ cat = 'agent';  icon = [char]0xE99A; now = 'is working';     done = 'finished' }
+}
+$MAX_TEAM = 5
+function Get-AgentName([string]$t) {
+  switch -CaseSensitive ($t) { 'general-purpose' { return 'Helper' } 'Explore' { return 'Explorer' } 'Plan' { return 'Planner' } }
+  # "security-reviewer" -> "Security reviewer"; names with capitals ("UI Finish-Gate Reviewer") stay as they are.
+  $t = $t -replace '_+', ' '
+  if ($t -cnotmatch '[A-Z]') { $t = $t -replace '-+', ' ' }
+  $t = $t.Trim()
+  if (-not $t) { return 'Helper' }
+  $t.Substring(0, 1).ToUpper() + $t.Substring(1)
+}
+# The helpers of this job, oldest first, each with its live step and how many steps it has done.
+function Get-Team($s, [double]$now, [bool]$running) {
+  $members = @(); $live = @(); $done = @{}
+  foreach ($l in (Get-List $s.log)) {
+    if ($l.by) { $done[[string]$l.by] = 1 + [int]$done[[string]$l.by] }
+    if ($l.agent) { $members += [pscustomobject]@{ id = [string]$l.agent; v = $l; start = [double]$l.startedAt; end = [double]$l.endedAt; live = $false } }
+  }
+  if ($running -and $s.steps) {
+    foreach ($p in $s.steps.PSObject.Properties) {
+      $v = $p.Value
+      if ($v.agent) { $members += [pscustomobject]@{ id = [string]$v.agent; v = $v; start = [double]$v.startedAt; end = $now; live = $true } }
+      elseif ($v.by) { $live += $v }
+    }
+  }
+  $members = @($members | Sort-Object start | Select-Object -Last $MAX_TEAM)
+  foreach ($m in $members) {
+    $who = if ($m.v.who) { [string]$m.v.who } elseif ([string]$m.v.label -match '\((.+)\)$') { $Matches[1] } else { '' }
+    $role = if ($ROLES.ContainsKey([string]$m.v.role)) { [string]$m.v.role } else { 'other' }
+    $cur = @($live | Where-Object { $_.by -eq $m.id } | Sort-Object { [double]$_.startedAt } -Descending | Select-Object -First 1)
+    $m | Add-Member -NotePropertyMembers @{ name = Get-AgentName $who; role = $role; task = [string]$m.v.detail; ok = ($m.v.ok -ne $false); cur = $(if ($cur.Count) { $cur[0] } else { $null }); steps = [math]::Max([int]$done[$m.id], [int]($m.v.done -as [int])) }
+  }
+  return $members
+}
+function New-Text([string]$text, [double]$size, $brush) {
+  $t = New-Object System.Windows.Controls.TextBlock
+  $t.Text = $text; $t.FontFamily = 'Segoe UI'; $t.FontSize = $size; $t.Foreground = $brush; $t.TextTrimming = 'CharacterEllipsis'
+  $t
+}
+# Draws the team as a vertical pipeline: a role icon per helper, joined by a line in start order.
+# Rebuilt only when something changes; otherwise only the timers are updated.
+function Draw-Team($card, $s, [double]$now, [bool]$running) {
+  $team = @(Get-Team $s $now $running)
+  if ($team.Count -eq 0) { $card.TeamPanel.Visibility = 'Collapsed'; $card.teamSig = $null; return }
+  $card.TeamPanel.Visibility = 'Visible'
+  $working = @($team | Where-Object { $_.live }).Count
+  $head = 'TEAM  ·  ' + $(if ($team.Count -eq 1) { '1 helper agent' } else { "$($team.Count) helper agents" })
+  if ($working -and $working -lt $team.Count) { $head += "  ·  $working working" }
+  $card.TeamHead.Text = $head
+  $timeOf = { param($m) $(if ($m.live) { Format-Ms ($now - $m.start) } else { Format-Ms ($m.end - $m.start) }) }
+  $sig = $script:themeName + '|' + (($team | ForEach-Object { '{0}/{1}/{2}/{3}/{4}/{5}' -f $_.id, $_.live, $_.ok, $_.steps, $(if ($_.cur) { $_.cur.label + $_.cur.detail } else { '' }), $_.task }) -join ';')
+  if ($sig -eq $card.teamSig -and $card.teamDurs) {
+    for ($i = 0; $i -lt $team.Count; $i++) { $card.teamDurs[$i].Text = & $timeOf $team[$i] }
+    return
+  }
+  $card.teamSig = $sig
+  $card.teamDurs = New-Object System.Collections.ArrayList
+  $card.Team.Children.Clear()
+  for ($i = 0; $i -lt $team.Count; $i++) {
+    $m = $team[$i]; $r = $ROLES[$m.role]; $rb = Get-CatBrush $r.cat
+    $g = New-Object System.Windows.Controls.Grid
+    foreach ($wd in 'Auto', '*', 'Auto') { $c = New-Object System.Windows.Controls.ColumnDefinition; $c.Width = $wd; [void]$g.ColumnDefinitions.Add($c) }
+
+    # Rail: the node, and a line down to the next helper.
+    $rail = New-Object System.Windows.Controls.Grid
+    $rail.Width = 24
+    if ($i -lt $team.Count - 1) {
+      $line = New-Object System.Windows.Shapes.Rectangle
+      $line.Width = 2; $line.Fill = $script:T.divider; $line.HorizontalAlignment = 'Center'; $line.Margin = '0,24,0,-2'
+      [void]$rail.Children.Add($line)
+    }
+    $node = New-Object System.Windows.Controls.Border
+    $node.Width = 24; $node.Height = 24; $node.CornerRadius = 12; $node.VerticalAlignment = 'Top'; $node.BorderThickness = 1.5
+    $glyph = New-Object System.Windows.Controls.TextBlock
+    $glyph.FontFamily = 'Segoe MDL2 Assets'; $glyph.FontSize = 11; $glyph.HorizontalAlignment = 'Center'; $glyph.VerticalAlignment = 'Center'
+    $tint = $rb.Clone(); $tint.Opacity = 0.18
+    if ($m.live) { $node.Background = $tint; $node.BorderBrush = $rb; $glyph.Text = $r.icon; $glyph.Foreground = $rb }
+    elseif (-not $m.ok) { $node.Background = $tint; $node.BorderBrush = $script:T.fail; $glyph.Text = [char]0xE711; $glyph.Foreground = $script:T.fail }
+    else { $node.Background = $tint; $node.BorderBrush = $script:T.done; $glyph.Text = [char]0xE73E; $glyph.Foreground = $script:T.done }
+    $node.Child = $glyph
+    [void]$rail.Children.Add($node)
+
+    # Who is doing what, the task, and the step it is on now.
+    $body = New-Object System.Windows.Controls.StackPanel
+    $body.Margin = '9,2,0,10'
+    $l1 = New-Text '' 12 $script:T.text
+    $nameRun = New-Object System.Windows.Documents.Run($m.name); $nameRun.FontWeight = 'SemiBold'
+    $verbRun = New-Object System.Windows.Documents.Run('  ' + $(if ($m.live) { $r.now } elseif (-not $m.ok) { 'stopped with an error' } else { $r.done }))
+    $verbRun.Foreground = if ($m.live) { $rb } else { $script:T.sub }
+    [void]$l1.Inlines.Add($nameRun); [void]$l1.Inlines.Add($verbRun)
+    [void]$body.Children.Add($l1)
+    if ($m.task) { $t2 = New-Text $m.task 11.5 $script:T.sub; $t2.Margin = '0,1,0,0'; [void]$body.Children.Add($t2) }
+    if ($m.live) {
+      if ($m.cur) {
+        $what = ([string]$m.cur.label -replace '^.*? › ', '') + $(if ($m.cur.detail) { "  ·  $($m.cur.detail)" } else { '' })
+        $t3 = New-Text ('▶  ' + $what) 11 (Get-CatBrush $m.cur.cat)
+      } else { $t3 = New-Text 'thinking…' 11 $script:T.muted }
+      $t3.Margin = '0,2,0,0'; [void]$body.Children.Add($t3)
+    } elseif ($m.steps) {
+      $t3 = New-Text $(if ($m.steps -eq 1) { '1 step' } else { "$($m.steps) steps" }) 11 $script:T.muted
+      $t3.Margin = '0,1,0,0'; [void]$body.Children.Add($t3)
+    }
+    $dur = New-Text (& $timeOf $m) 11 $script:T.muted
+    [System.Windows.Documents.Typography]::SetNumeralAlignment($dur, 'Tabular'); $dur.Margin = '8,4,0,0'; $dur.VerticalAlignment = 'Top'
+    [void]$card.teamDurs.Add($dur)
+    [System.Windows.Controls.Grid]::SetColumn($body, 1); [System.Windows.Controls.Grid]::SetColumn($dur, 2)
+    [void]$g.Children.Add($rail); [void]$g.Children.Add($body); [void]$g.Children.Add($dur)
+    [void]$card.Team.Children.Add($g)
+  }
+}
+
 # Fills one card for a chat that is working.
 function Update-ActiveCard($card, $sid, $s, [double]$now, [int]$maxRows) {
   $t0 = [double]$s.turnStartedAt
@@ -834,11 +961,12 @@ function Update-ActiveCard($card, $sid, $s, [double]$now, [int]$maxRows) {
   # Helper agents (subagents) still working, including background ones after the reply is done.
   $helpers = 0
   if ($s.steps) { $helpers = @($s.steps.PSObject.Properties | Where-Object { $_.Value.agent }).Count }
-  if ($helpers -gt 0) {
+  if ($helpers -gt 0 -and $s.waiting) {
     $word = if ($helpers -eq 1) { '1 helper agent' } else { "$helpers helper agents" }
-    $card.TurnText.Text += Join-Phrases $(if ($s.waiting) { "  ·  reply done, waiting for $word" } else { "  ·  $word working" })
+    $card.TurnText.Text += Join-Phrases "  ·  reply done, waiting for $word"
   }
-  Draw-Activity $card $tl.rows $maxRows
+  Draw-Team $card $s $now $true
+  Draw-Activity $card @($tl.rows | Where-Object { -not $_.agent }) $maxRows   # helpers are shown in the Team view
 
   # Notice: grows open while it applies, then folds away.
   if ($card.noticeInfo -and $now -lt $card.noticeInfo.until) {
@@ -871,7 +999,8 @@ function Update-FinishedCard($card, $s, [double]$now, [int]$maxRows) {
   $card.TurnPct.Text = '100%'
   $fails = @((Get-List $s.log) | Where-Object { $_.ok -eq $false }).Count
   $card.TurnText.Text = Join-Phrases ('Took {0}  ·  {1} steps{2}' -f (Format-Ms ($t1 - $t0)), (Get-List $s.log).Count, $(if ($fails) { "  ·  $fails failed" } else { '' }))
-  Draw-Activity $card $tl.rows $maxRows
+  Draw-Team $card $s $now $false
+  Draw-Activity $card @($tl.rows | Where-Object { -not $_.agent }) $maxRows   # helpers are shown in the Team view
 }
 
 # ---------- demo ----------

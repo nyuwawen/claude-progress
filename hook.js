@@ -48,6 +48,21 @@ const cut = (s, n) => {
 }
 // Keys taken from input must never be special object names.
 const safeKey = k => (k === '__proto__' || k in Object.prototype) ? `_${k}` : k
+// What a helper agent is doing, for the window's Team view. Its type decides first
+// ("UI Finish-Gate Reviewer" is checking, even though it is about UI), then its task.
+const ROLES = [
+  ['review', /review|check|verif|audit|gate|\bqa\b|critic|inspect|align|approv|guardian/i],
+  ['test', /test|secur|pen.?test|fuzz/i],
+  ['design', /design|\bui\b|\bux\b|visual|brand|layout|mock.?up|figma|image|creative|whims|illustrat|story/i],
+  ['plan', /plan|architect|strateg/i],
+  ['research', /explor|research|search|find|investig|look|guide|fetch|analy|read|scan/i],
+  ['write', /writ|content|copy|\bdoc|draft/i],
+  ['build', /build|implement|code|fix|develop|engineer|refactor|migrat|install|make|creat/i],
+]
+const roleOf = (type, task) => {
+  const hit = ROLES.find(([, re]) => re.test(type)) || ROLES.find(([, re]) => re.test(task))
+  return hit ? hit[0] : 'other'
+}
 const base = p => String(p || '').replace(/^.*[\\/]/, '')
 const host = u => { try { return new URL(u).host } catch { return cut(u, 40) } }
 
@@ -169,6 +184,9 @@ const main = event => {
     s.waiting = false
   }
   const finishStep = (id, step) => {
+    // Count a helper's steps on the helper itself: its own steps may fall out of the log
+    // (a new turn starts while it keeps working).
+    if (step.by) { const h = Object.values(s.steps).find(v => isHelper(v) && v.agent === step.by); if (h) h.done = (Number(h.done) || 0) + 1 }
     remember(step.key, now - step.startedAt)
     s.log.push({ ...step, endedAt: now, ok: !failed })
     s.log = s.log.slice(-LOG_MAX)
@@ -216,8 +234,10 @@ const main = event => {
     // Claim the Agent call that launched it (same type first, then any unclaimed one).
     const calls = Object.entries(s.steps).filter(([, v]) => v.cat === 'agent' && !v.agent && !v.by)
     const mine = calls.find(([, v]) => v.wants && v.wants.toLowerCase() === agentType.toLowerCase()) || calls.find(([, v]) => !v.wants) || calls[0]
-    if (mine) Object.assign(mine[1], { agent: agentId, label })
-    else s.steps[safeKey(`agent-${agentId}`)] = { key: `agent:${agentType}`, cat: 'agent', label, detail: '', startedAt: now, estimateMs: null, agent: agentId }
+    const task = mine ? String(mine[1].detail || '') : ''
+    const who = { who: agentType, role: roleOf(agentType, task) }
+    if (mine) Object.assign(mine[1], { agent: agentId, label, ...who })
+    else s.steps[safeKey(`agent-${agentId}`)] = { key: `agent:${agentType}`, cat: 'agent', label, detail: '', startedAt: now, estimateMs: null, agent: agentId, ...who }
   } else if (event === 'agent-stop' && agentId) {
     for (const [id, v] of Object.entries(s.steps)) if (v.agent === agentId || v.by === agentId) finishStep(id, v)
     if (s.waiting && !helpersLeft()) endTurn()
