@@ -203,12 +203,13 @@ $cardXaml = @'
       <TextBlock x:Name="NowDetail" Foreground="{DynamicResource TextMuted}" FontFamily="Consolas" FontSize="11.5" Margin="0,2,0,0" TextTrimming="CharacterEllipsis"/>
     </StackPanel>
 
-    <StackPanel Margin="0,9,0,0">
-      <DockPanel>
+    <StackPanel x:Name="JobPanel" Margin="0,9,0,0">
+      <DockPanel x:Name="JobHead">
         <TextBlock x:Name="TurnPct" DockPanel.Dock="Right" Typography.NumeralAlignment="Tabular" MinWidth="34" TextAlignment="Right" Foreground="{DynamicResource TextMain}" FontFamily="Segoe UI" FontSize="11" FontWeight="SemiBold"/>
         <TextBlock Text="WHOLE JOB" Foreground="{DynamicResource TextMuted}" FontFamily="Segoe UI" FontSize="10" FontWeight="SemiBold"/>
       </DockPanel>
-      <Border CornerRadius="5" Background="{DynamicResource Track}" Height="12" Margin="0,4,0,0">
+      <Border x:Name="JobBar" CornerRadius="5" Background="{DynamicResource Track}" Height="12" Margin="0,4,0,0">
+        <Border.LayoutTransform><ScaleTransform x:Name="JobBarScale" ScaleX="1" ScaleY="1"/></Border.LayoutTransform>
         <Canvas x:Name="Seg" Height="12"/>
       </Border>
       <TextBlock x:Name="TurnText" Typography.NumeralAlignment="Tabular" LineHeight="17" LineStackingStrategy="BlockLineHeight" Foreground="{DynamicResource TextSub}" FontFamily="Segoe UI" FontSize="11.5" Margin="0,5,0,0" TextWrapping="Wrap"/>
@@ -242,7 +243,7 @@ $cardXaml = @'
   </StackPanel>
 </Border>
 '@
-$cardNames = 'Dot','Clock','Chat','NowPanel','NowLabel','NowDetail','TurnPct','Seg','TurnText','TeamPanel','TeamHead','Team','StepPanel','StepPct','StepHead','StepTrack','StepFill','StepText','Notice','NoticeText','DetailPanel','Activity'
+$cardNames = 'Dot','Clock','Chat','NowPanel','NowLabel','NowDetail','JobPanel','JobHead','JobBar','JobBarScale','TurnPct','Seg','TurnText','TeamPanel','TeamHead','Team','StepPanel','StepPct','StepHead','StepTrack','StepFill','StepText','Notice','NoticeText','DetailPanel','Activity'
 
 $window = [Windows.Markup.XamlReader]::Load((New-Object System.Xml.XmlNodeReader $windowXaml))
 $ui = @{}
@@ -307,10 +308,16 @@ function Set-Theme([string]$name, [bool]$save = $true) {
 
 function New-Card {
   $el = [Windows.Markup.XamlReader]::Parse($cardXaml)
-  $c = @{ root = $el; noticeInfo = $null; wasBusy = $false; busySince = 0; leaving = $false; removeAt = 0; lastPct = 0; lastScale = 0; segW = 0; noticeHideAt = $null }
+  $c = @{ root = $el; noticeInfo = $null; wasBusy = $false; busySince = 0; leaving = $false; removeAt = 0; lastPct = 0; lastScale = 0; segW = 0; noticeHideAt = $null
+          compact = $false; settleAt = 0 }
   foreach ($n in $cardNames) { $c[$n] = $el.FindName($n) }
-  # Cards fade in and rise a few pixels when they appear (see Show-Element).
-  $el.RenderTransform = New-Object System.Windows.Media.TranslateTransform
+  # Cards fade in and rise a few pixels when they appear (see Show-Element), and shrink a little
+  # as they leave (scale from the top edge).
+  $c.scale = New-Object System.Windows.Media.ScaleTransform(1, 1)
+  $tg = New-Object System.Windows.Media.TransformGroup
+  [void]$tg.Children.Add($c.scale); [void]$tg.Children.Add((New-Object System.Windows.Media.TranslateTransform))
+  $el.RenderTransform = $tg
+  $el.RenderTransformOrigin = New-Object System.Windows.Point(0.5, 0)
   $el.Opacity = 0
   $c.Notice.RenderTransform = New-Object System.Windows.Media.TranslateTransform
   return $c
@@ -499,8 +506,9 @@ function Move-To($target, $prop, [double]$to, [int]$ms, [string]$ease = 'out', [
 function Show-Element($el, [double]$rise, [int]$delay = 0) {
   $el.BeginAnimation($P_Opacity, $null); $el.Opacity = 0
   Move-To $el $P_Opacity 1 220 'out' $delay
-  if ($el.RenderTransform -is [System.Windows.Media.TranslateTransform]) {
-    $tt = $el.RenderTransform
+  $tt = $el.RenderTransform
+  if ($tt -is [System.Windows.Media.TransformGroup]) { $tt = @($tt.Children | Where-Object { $_ -is [System.Windows.Media.TranslateTransform] })[0] }
+  if ($tt -is [System.Windows.Media.TranslateTransform]) {
     if ($script:reduce -or $rise -eq 0) { Move-To $tt $P_Y 0 0 } else { $tt.BeginAnimation($P_Y, $null); $tt.Y = $rise; Move-To $tt $P_Y 0 220 'out' $delay }
   }
 }
@@ -534,6 +542,9 @@ function Set-PropAnim($el, $prop, [double]$from, [double]$to, [int]$ms, [bool]$r
 function Get-NaturalHeight($el) {
   $pw = 0; if ($el.Parent -is [System.Windows.FrameworkElement]) { $pw = $el.Parent.ActualWidth }
   if ($pw -le 0) { $pw = 400 }
+  # Its children may have just changed (shown, hidden, height animation removed): without this,
+  # WPF hands back the size it measured last time.
+  $el.InvalidateMeasure()
   $el.Measure((New-Object System.Windows.Size($pw, [double]::PositiveInfinity)))
   return [math]::Max(0, $el.DesiredSize.Height - $el.Margin.Top - $el.Margin.Bottom)
 }
@@ -562,6 +573,135 @@ function Set-Shown($el, [bool]$show, [double]$now) {
     Move-To $el $P_Opacity 0 160
     $script:folding[$id] = @{ el = $el; at = $now + 200 }
   }
+}
+
+# ---------- a finished card minimises, then leaves ----------
+# When a chat finishes while other cards are on screen, its card holds for a moment (so "Finished"
+# registers), then folds calmly into a one-line "done" row with the finished timeline as a thin
+# line; the cards below glide up. After DONE_MS the row fades, shrinks slightly and collapses.
+# If the chat starts working again, everything opens back up from wherever it is.
+$easeSoft = New-Object System.Windows.Media.Animation.KeySpline(0.25, 0.1, 0.25, 1)   # calm "ease": starts moving at once, settles slowly
+$P_Margin = [System.Windows.FrameworkElement]::MarginProperty
+$P_ScaleY = [System.Windows.Media.ScaleTransform]::ScaleYProperty
+$HOLD_MS = 1200; $FOLD_MS = 900
+# Animates a double property from -> to with the soft curve.
+function Set-SoftAnim($el, $prop, [double]$from, [double]$to, [int]$ms, [int]$delay = 0, [bool]$release = $false) {
+  $a = New-Object System.Windows.Media.Animation.DoubleAnimationUsingKeyFrames
+  if ($delay -gt 0) { $a.BeginTime = [TimeSpan]::FromMilliseconds($delay) }
+  [void]$a.KeyFrames.Add((New-Object System.Windows.Media.Animation.DiscreteDoubleKeyFrame($from, [System.Windows.Media.Animation.KeyTime]::FromTimeSpan([TimeSpan]::Zero))))
+  [void]$a.KeyFrames.Add((New-Object System.Windows.Media.Animation.SplineDoubleKeyFrame($to, [System.Windows.Media.Animation.KeyTime]::FromTimeSpan([TimeSpan]::FromMilliseconds($ms)), $easeSoft)))
+  if ($release) { $a.FillBehavior = [System.Windows.Media.Animation.FillBehavior]::Stop }
+  [System.Windows.Media.Animation.Timeline]::SetDesiredFrameRate($a, $script:perf.fps)
+  $el.BeginAnimation($prop, $a)
+}
+# Animates an element's top margin with the soft curve (so gaps close and open smoothly instead of snapping).
+function Set-MarginTop($el, [double]$to, [int]$ms, [int]$delay = 0) {
+  $m = $el.Margin
+  $target = New-Object System.Windows.Thickness($m.Left, $to, $m.Right, $m.Bottom)
+  if ($ms -le 0) { $el.BeginAnimation($P_Margin, $null); $el.Margin = $target; return }
+  $a = New-Object System.Windows.Media.Animation.ThicknessAnimationUsingKeyFrames
+  [void]$a.KeyFrames.Add((New-Object System.Windows.Media.Animation.SplineThicknessKeyFrame($target, [System.Windows.Media.Animation.KeyTime]::FromTimeSpan([TimeSpan]::FromMilliseconds($ms)), $easeSoft)))
+  if ($delay -gt 0) { $a.BeginTime = [TimeSpan]::FromMilliseconds($delay) }
+  [System.Windows.Media.Animation.Timeline]::SetDesiredFrameRate($a, $script:perf.fps)
+  $el.BeginAnimation($P_Margin, $a)
+}
+function Get-FoldParts($card) { @($card.NowPanel, $card.JobHead, $card.TurnText, $card.TeamPanel, $card.StepPanel, $card.Notice, $card.DetailPanel) }
+
+# Folds a finished card into its one-line "done" row.
+function Enter-Compact($card, [double]$now) {
+  $card.compact = $true
+  $parts = Get-FoldParts $card
+  if ($Snapshot -or -not $script:perf.anim -or $script:reduce) {
+    foreach ($p in $parts) { $p.BeginAnimation($P_Height, $null); $p.BeginAnimation($P_Opacity, $null); $p.Visibility = 'Collapsed' }
+    $card.JobBarScale.BeginAnimation($P_ScaleY, $null); $card.JobBarScale.ScaleY = 0.25
+    $card.JobPanel.Margin = '0,7,0,0'
+    # Windows animations off: a quick fade instead of movement. Saver mode: instant.
+    if ($script:reduce -and $script:perf.anim -and -not $Snapshot) { $card.root.BeginAnimation($P_Opacity, $null); $card.root.Opacity = 0; Move-To $card.root $P_Opacity 1 200 }
+    $card.settleAt = 0
+    return
+  }
+  # Every part above and below the timeline folds its own height and gap to zero on one curve, so
+  # the timeline rises into place continuously and the card (and the cards below) follow on their own.
+  $card.root.ClipToBounds = $true
+  $card.foldMargins = @{}
+  $i = 0
+  # Details first, so the summary is the last thing to go.
+  foreach ($p in @($card.DetailPanel, $card.StepPanel, $card.Notice, $card.TeamPanel, $card.NowPanel, $card.JobHead, $card.TurnText)) {
+    if ($p.Visibility -eq 'Visible') {
+      $card.foldMargins[[System.Runtime.CompilerServices.RuntimeHelpers]::GetHashCode($p)] = $p.Margin.Top
+      $p.ClipToBounds = $true
+      # The fade starts with the height and lasts longer, so the card never shows as an empty shell.
+      Set-SoftAnim $p $P_Opacity $p.Opacity 0 ([int]($FOLD_MS * 0.4)) ([math]::Min(60, $i * 15))
+      Set-SoftAnim $p $P_Height $p.ActualHeight 0 $FOLD_MS
+      Set-MarginTop $p 0 $FOLD_MS
+    }
+    $i++
+  }
+  Set-MarginTop $card.JobPanel 7 $FOLD_MS
+  Set-SoftAnim $card.JobBarScale $P_ScaleY $card.JobBarScale.ScaleY 0.25 $FOLD_MS
+  $card.Clock.Opacity = 0.2; Move-To $card.Clock $P_Opacity 1 260 'out' 140
+  $card.settleAt = $now + $FOLD_MS + 40
+}
+# Once the fold has finished: collapse the folded parts and hand the height back to layout.
+function Complete-Compact($card) {
+  $card.settleAt = 0
+  # The folded parts are already 0 tall with no gap: collapsing them now changes nothing on screen.
+  foreach ($p in (Get-FoldParts $card)) { $p.Visibility = 'Collapsed' }
+}
+# A minimised card whose chat started working again opens back up from where it is.
+function Exit-Compact($card) {
+  $card.compact = $false; $card.settleAt = 0
+  $root = $card.root
+  $from = $root.ActualHeight
+  # Give the parts their natural height and gap back; the card's own height glides open (Complete-Expand).
+  foreach ($p in (Get-FoldParts $card)) {
+    $p.BeginAnimation($P_Height, $null)
+    $key = [System.Runtime.CompilerServices.RuntimeHelpers]::GetHashCode($p)
+    if ($card.foldMargins -and $card.foldMargins.ContainsKey($key)) { Set-MarginTop $p $card.foldMargins[$key] 0 }
+  }
+  Set-MarginTop $card.JobPanel 9 0
+  foreach ($p in @($card.NowPanel, $card.JobHead, $card.TurnText)) { $p.Visibility = 'Visible' }
+  $i = 0
+  foreach ($p in (Get-FoldParts $card)) { if ($script:perf.anim) { Move-To $p $P_Opacity 1 220 'out' ($i * 40) } else { $p.BeginAnimation($P_Opacity, $null); $p.Opacity = 1 }; $i++ }
+  if ($script:perf.anim) { Move-To $card.JobBarScale $P_ScaleY 1 280 } else { $card.JobBarScale.BeginAnimation($P_ScaleY, $null); $card.JobBarScale.ScaleY = 1 }
+  $card.expandFrom = if ($script:perf.anim -and -not $script:reduce) { $from } else { -1 }
+}
+# Called after the card's content is filled in: glide from the old height to the new natural one.
+function Complete-Expand($card) {
+  if ($null -eq $card.expandFrom) { return }
+  $from = $card.expandFrom; $card.expandFrom = $null
+  $root = $card.root; $root.BeginAnimation($P_Height, $null)
+  if ($from -lt 0) { return }
+  $root.ClipToBounds = $true
+  Set-HeightAnim $root $from (Get-NaturalHeight $root) 280 $true
+}
+# A card whose chat is no longer shown: fade, shrink a little from the top edge, and collapse
+# (with the gap above it), slower and gentler than a snap. Returns ms until it can be removed.
+function Start-Leave($card) {
+  $root = $card.root
+  if ($Snapshot -or -not $script:perf.anim) { $root.Opacity = 0; return 0 }
+  if ($script:reduce) { Move-To $root $P_Opacity 0 300; return 320 }
+  $full = -not $card.compact
+  $root.ClipToBounds = $true
+  Set-SoftAnim $root $P_Opacity $root.Opacity 0 420
+  Set-SoftAnim $card.scale $P_ScaleX $card.scale.ScaleX 0.96 520
+  Set-SoftAnim $card.scale $P_ScaleY $card.scale.ScaleY 0.96 520
+  $root.BeginAnimation($P_Height, $null)
+  # The row is mostly gone before the cards below start to move up.
+  Set-SoftAnim $root $P_Height $root.ActualHeight 0 $(if ($full) { 600 } else { 540 }) 140
+  Set-MarginTop $root 0 $(if ($full) { 600 } else { 540 }) 140
+  return $(if ($full) { 780 } else { 720 })
+}
+# A leaving card whose chat came back: open back up from its current size, not from zero.
+function Stop-Leave($card) {
+  $root = $card.root
+  $from = $root.ActualHeight
+  $root.BeginAnimation($P_Height, $null)
+  if (-not $script:perf.anim) { $root.BeginAnimation($P_Opacity, $null); $root.Opacity = 1; $card.scale.ScaleX = 1; $card.scale.ScaleY = 1; Set-MarginTop $root 10 0; return }
+  Move-To $root $P_Opacity 1 280   # takes over from the current (fading) value: no flash
+  Move-To $card.scale $P_ScaleX 1 280; Move-To $card.scale $P_ScaleY 1 280
+  Set-MarginTop $root 10 280
+  $card.expandFrom = $from
 }
 
 # Collapses parts whose fold has finished.
@@ -899,6 +1039,9 @@ function Draw-Team($card, $s, [double]$now, [bool]$running) {
 
 # Fills one card for a chat that is working.
 function Update-ActiveCard($card, $sid, $s, [double]$now, [int]$maxRows) {
+  if ($card.compact) { Exit-Compact $card }   # the chat is working again: open the card back up
+  $card.finSeen = $null
+  $card.Clock.SetResourceReference([System.Windows.Controls.TextBlock]::ForegroundProperty, 'TextMain')
   $t0 = [double]$s.turnStartedAt
   $spent = $now - $t0
   $tl = Get-Timeline $s $t0 $now $now $true
@@ -989,13 +1132,28 @@ function Update-ActiveCard($card, $sid, $s, [double]$now, [int]$maxRows) {
 }
 
 # Fills one card for a chat that finished in the last two minutes.
-function Update-FinishedCard($card, $s, [double]$now, [int]$maxRows) {
+function Update-FinishedCard($card, $s, [double]$now, [int]$maxRows, [bool]$others = $false) {
   if ($card.wasBusy -and $prefs.sound -and ($now - $card.busySince) -gt 30000) { [System.Media.SystemSounds]::Asterisk.Play() }
   $card.wasBusy = $false
   $t0 = [double]$s.lastTurnStartedAt; $t1 = [double]$s.finishedAt
   $tl = Get-Timeline $s $t0 $t1 $now $false
   $card.Dot.Fill = $script:T.done
   $card.Chat.Text = Get-ChatName $s
+  $fails = @((Get-List $s.log) | Where-Object { $_.ok -eq $false }).Count
+  # Minimise to a one-line "done" row when other cards are on screen (after a short hold, and only
+  # if there is time left to see it). A card on its own keeps its full summary.
+  # The hold counts from when this card first SHOWED "Finished" (in Saver mode that can be a refresh
+  # or two after the chat actually finished), so the summary is always seen before it minimises.
+  $age = $now - $t1
+  if (-not $card.finSeen) { $card.finSeen = $now }
+  if ($card.compact) { if ($card.settleAt -and $now -ge $card.settleAt) { Complete-Compact $card } }
+  elseif ($others -and ($now - $card.finSeen) -ge $HOLD_MS -and ($DONE_MS - $age) -gt 2000) { Enter-Compact $card $now }
+  if ($card.compact) {
+    $card.Clock.Foreground = $script:T.sub   # the summary sits quieter than the chat name
+    $card.Clock.Text = 'Done  ·  {0}  ·  {1} steps{2}' -f (Format-Ms ($t1 - $t0)), (Get-List $s.log).Count, $(if ($fails) { "  ·  $fails failed" } else { '' })
+    Draw-Segments $card $tl.segs $t0 ([math]::Max($t1 - $t0, 1000))
+    return
+  }
   $card.Clock.Text = 'Done'
   $card.NowPanel.Visibility = 'Visible'
   $card.NowLabel.Text = 'Finished'
@@ -1005,7 +1163,6 @@ function Update-FinishedCard($card, $s, [double]$now, [int]$maxRows) {
   Set-Shown $card.Notice $false $now
   Draw-Segments $card $tl.segs $t0 ([math]::Max($t1 - $t0, 1000))
   $card.TurnPct.Text = '100%'
-  $fails = @((Get-List $s.log) | Where-Object { $_.ok -eq $false }).Count
   $card.TurnText.Text = Join-Phrases ('Took {0}  ·  {1} steps{2}' -f (Format-Ms ($t1 - $t0)), (Get-List $s.log).Count, $(if ($fails) { "  ·  $fails failed" } else { '' }))
   Draw-Team $card $s $now $false
   Draw-Activity $card @($tl.rows | Where-Object { -not $_.agent }) $maxRows   # helpers are shown in the Team view
@@ -1026,6 +1183,7 @@ $script:startedAt = [double][DateTimeOffset]::UtcNow.ToUnixTimeMilliseconds()
 $GRACE = 6000
 $DONE_MS = if ($Demo) { 120000 } else { 8000 }   # how long a finished chat's card stays (the demo keeps them to show the summary)
 $script:cards = @{}
+$script:seen = @{}; $script:seenN = 0   # the order cards first appeared in (see Update-View)
 $script:order = ''
 $MAX_CARDS = 10
 $MAX_STATE_BYTES = 5MB
@@ -1100,6 +1258,10 @@ function Update-View {
   if ($active.Count -gt 0 -and -not $script:firstCardNoted) { Set-FirstCard $active $now }
   $finished = @($finished | Sort-Object { $_.s.finishedAt -as [double] } -Descending)
   $shown = @(@($active) + @($finished) | Select-Object -First $MAX_CARDS)
+  # Cards keep the place they first appeared in, so a chat that finishes (or starts again) minimises
+  # or opens where it is instead of jumping to another position.
+  foreach ($x in $shown) { if (-not $script:seen.ContainsKey($x.id)) { $script:seen[$x.id] = ++$script:seenN } }
+  $shown = @($shown | Sort-Object { $script:seen[$_.id] })
   $maxRows = if ($shown.Count -gt 1) { 4 } else { 8 }
 
   # Create, update and order the cards. New cards fade in; cards that go away fade out first.
@@ -1107,24 +1269,26 @@ function Update-View {
   foreach ($x in $shown) {
     if (-not $script:cards.ContainsKey($x.id)) { $script:cards[$x.id] = New-Card; $entering += $x.id }
     $card = $script:cards[$x.id]
-    if ($card.leaving) { $card.leaving = $false; $entering += $x.id }
-    if ($x.s.turnStartedAt) { Update-ActiveCard $card $x.id $x.s $now $maxRows } else { Update-FinishedCard $card $x.s $now $maxRows }
+    if ($card.leaving) { $card.leaving = $false; Stop-Leave $card }   # it came back while leaving
+    if ($x.s.turnStartedAt) { Update-ActiveCard $card $x.id $x.s $now $maxRows } else { Update-FinishedCard $card $x.s $now $maxRows ($shown.Count -gt 1) }
+    Complete-Expand $card
   }
   $ids = @($shown | ForEach-Object { $_.id })
   foreach ($k in @($script:cards.Keys)) {
     if ($ids -contains $k) { continue }
     $card = $script:cards[$k]
     if (-not $card.leaving) {
-      $card.leaving = $true; $card.removeAt = $now + 220
-      # Fold the card closed while it fades, so the cards below slide up.
-      if ($script:perf.anim -and -not $Snapshot) { $card.root.ClipToBounds = $true; Set-HeightAnim $card.root $card.root.ActualHeight 0 200 $false }
-      Move-To $card.root $P_Opacity 0 160
+      # Fade, shrink slightly and fold closed (with the gap above it), so the cards below glide up.
+      $card.leaving = $true; $card.removeAt = $now + (Start-Leave $card)
+      # No animation (Saver mode): take it out now, not at the next refresh, so no empty gap lingers.
+      if ($card.removeAt -le $now) { $script:cards.Remove($k); $script:seen.Remove($k) }
     } elseif ($now -ge $card.removeAt) {
-      $script:cards.Remove($k)
+      $script:cards.Remove($k); $script:seen.Remove($k)
     }
   }
   # Leaving cards keep their place until they have faded out.
-  $order = @($ids) + @($script:cards.Keys | Where-Object { $ids -notcontains $_ })
+  # Leaving cards keep their place too (not moved to the end), so they fade and fold where they are.
+  $order = @($script:cards.Keys | Sort-Object { if ($script:seen.ContainsKey($_)) { $script:seen[$_] } else { [int]::MaxValue } })
   $orderKey = $order -join '|'
   if ($orderKey -ne $script:order) {
     $ui.Sessions.Children.Clear()
@@ -1184,7 +1348,9 @@ function Update-View {
     }
   } else {
     $ui.Sessions.Visibility = 'Visible'; $ui.MiniTrack.Visibility = 'Collapsed'
-    $ui.Count.Text = if ($shown.Count -gt 0) { "$($active.Count) working  ·  $($finished.Count) done" } else { '' }
+    # A done row that is still on its way out counts as done until it has gone.
+    $doneN = $finished.Count + @($script:cards.Values | Where-Object { $_.leaving }).Count
+    $ui.Count.Text = if ($shown.Count -gt 0 -or $doneN -gt 0) { "$($active.Count) working  ·  $doneN done" } else { '' }
     $ui.Legend.Visibility = if ($shown.Count -gt 0 -and $prefs.details) { 'Visible' } else { 'Collapsed' }
   }
   $justOpened = ($now - $script:startedAt) -lt $GRACE
