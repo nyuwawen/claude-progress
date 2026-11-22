@@ -47,6 +47,7 @@ No release yet, or want the latest code? The green **Code** button → **Downloa
 | 🎨 **Themes, sizes, modes** | Normal, DADA and REN themes · Small to Extra large (or Ctrl + scroll) · Saver, Neutral and Full power. |
 | ➖ **Minimize** | Folds down into a slim bar toward the button you clicked, with the percent, time left and a thin progress line. |
 | 🌊 **Smooth motion** | Bars glide continuously; new steps, notices and chats grow open and enter in a gentle stagger instead of popping in. |
+| 🪶 **Calm finish** | When one chat finishes while others keep working, its card shows "Finished", then slowly folds into a slim "Done · 44s · 3 steps" row with its coloured timeline as a thin line, and fades away after a few seconds. Prefer that look all the time? Turn on **Show only progress**. |
 | 🔢 **Calm numbers** | Fixed-width digits, so timers and percentages count without wobbling, and status lines never strand a lone word. |
 | 🔒 **Private** | Everything stays on your computer. Nothing is sent anywhere. |
 
@@ -110,6 +111,7 @@ Right-click the window for everything. Drag it anywhere; it remembers its place 
 | **Performance** | Saver · Neutral · Full power |
 | **Size** | Small · Medium · Large · Extra large (or hold **Ctrl** and scroll) |
 | **Show activity details** | the step list and colour legend |
+| **Show only progress** | every chat as one slim row: what it's doing, the percent and time left, and its coloured timeline as a thin line |
 | **Show regular Claude chats** | also track chats in the Claude desktop app (on by default) |
 | **Hide when Claude is idle** | only show the window while Claude works |
 | **Sound when a long job finishes** | a chime after jobs longer than 30 seconds |

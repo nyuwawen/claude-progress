@@ -150,6 +150,7 @@ $catNames = [ordered]@{ read = 'Reading'; edit = 'Editing'; run = 'Running'; ren
           <Separator/>
           <MenuItem x:Name="MenuMini" Header="Minimize  (or double-click)" IsCheckable="True"/>
           <MenuItem x:Name="MenuDetails" Header="Show activity details" IsCheckable="True"/>
+          <MenuItem x:Name="MenuProgressOnly" Header="Show only progress" IsCheckable="True"/>
           <MenuItem x:Name="MenuChats" Header="Show regular Claude chats" IsCheckable="True"/>
           <MenuItem x:Name="MenuHideIdle" Header="Hide when Claude is idle" IsCheckable="True"/>
           <MenuItem x:Name="MenuSound" Header="Sound when a long job finishes" IsCheckable="True"/>
@@ -248,7 +249,7 @@ $cardNames = 'Dot','Clock','Chat','NowPanel','NowLabel','NowDetail','JobPanel','
 $window = [Windows.Markup.XamlReader]::Load((New-Object System.Xml.XmlNodeReader $windowXaml))
 $ui = @{}
 foreach ($n in 'Shell','GlowLayer','Glow','ModeSaver','ModeNeutral','ModeFull','Zoom','Badge','BadgeText','ThemeNormal','ThemeDADA','ThemeRen','Size75','Size100','Size125','Size150',
-               'Dot','Count','Title','Sessions','Legend','MinHit','MinHover','MinBtn','MiniTrack','MiniFill','MenuMini','MenuDetails','MenuChats','MenuHideIdle','MenuSound','MenuReset','MenuExit') {
+               'Dot','Count','Title','Sessions','Legend','MinHit','MinHover','MinBtn','MiniTrack','MiniFill','MenuMini','MenuDetails','MenuProgressOnly','MenuChats','MenuHideIdle','MenuSound','MenuReset','MenuExit') {
   $ui[$n] = $window.FindName($n)
 }
 
@@ -331,16 +332,16 @@ if ($SelfTest) {
 }
 
 # ---------- preferences ----------
-$prefs = @{ left = $null; top = $null; hideIdle = $false; sound = $true; details = $true; scale = 1.0; theme = 'Normal'; mode = 'Neutral'; mini = $false; chats = $true }
+$prefs = @{ left = $null; top = $null; hideIdle = $false; sound = $true; details = $true; scale = 1.0; theme = 'Normal'; mode = 'Neutral'; mini = $false; chats = $true; progressOnly = $false }
 if (Test-Path $prefsFile) {
   try {
     $p = Get-Content $prefsFile -Raw | ConvertFrom-Json
-    foreach ($k in 'left','top','hideIdle','sound','details','scale','theme','mode','mini','chats') { if ($null -ne $p.$k) { $prefs[$k] = $p.$k } }
+    foreach ($k in 'left','top','hideIdle','sound','details','scale','theme','mode','mini','chats','progressOnly') { if ($null -ne $p.$k) { $prefs[$k] = $p.$k } }
   } catch {}
 }
 if ($Theme) { $prefs.theme = $Theme }
 if ($Mode) { $prefs.mode = $Mode }
-if ($Snapshot) { $prefs.scale = 1.0; $prefs.details = $true; $prefs.hideIdle = $false; $prefs.left = -10000; $prefs.top = -10000 }
+if ($Snapshot) { $prefs.scale = 1.0; $prefs.details = $true; $prefs.progressOnly = $false; $prefs.hideIdle = $false; $prefs.left = -10000; $prefs.top = -10000 }
 function Save-Prefs {
   if ($Demo -or $Snapshot) { return }   # the demo and previews never change your saved settings
   if ($window.IsLoaded) { $prefs.left = $window.Left; $prefs.top = $window.Top }
@@ -387,6 +388,10 @@ $ui.MenuDetails.IsChecked = [bool]$prefs.details
 $ui.MenuHideIdle.IsChecked = [bool]$prefs.hideIdle
 $ui.MenuSound.IsChecked = [bool]$prefs.sound
 $ui.MenuDetails.Add_Click({ $prefs.details = $ui.MenuDetails.IsChecked; Save-Prefs })
+# Show only progress: every card becomes a slim row (name, % and time left, the coloured timeline).
+# The cards fold or open on the next refresh (see Update-ActiveCard / Update-FinishedCard).
+$ui.MenuProgressOnly.IsChecked = [bool]$prefs.progressOnly
+$ui.MenuProgressOnly.Add_Click({ $prefs.progressOnly = $ui.MenuProgressOnly.IsChecked; Save-Prefs })
 $ui.MenuHideIdle.Add_Click({ $prefs.hideIdle = $ui.MenuHideIdle.IsChecked; Save-Prefs })
 
 # Regular Claude chats have no hooks: chat-watch.ps1 reads the Claude app's window and reports them.
@@ -631,7 +636,7 @@ function Enter-Compact($card, [double]$now) {
       $card.foldMargins[[System.Runtime.CompilerServices.RuntimeHelpers]::GetHashCode($p)] = $p.Margin.Top
       $p.ClipToBounds = $true
       # The fade starts with the height and lasts longer, so the card never shows as an empty shell.
-      Set-SoftAnim $p $P_Opacity $p.Opacity 0 ([int]($FOLD_MS * 0.4)) ([math]::Min(60, $i * 15))
+      Set-SoftAnim $p $P_Opacity $p.Opacity 0 ([int]($FOLD_MS * 0.6)) ([math]::Min(60, $i * 15))
       Set-SoftAnim $p $P_Height $p.ActualHeight 0 $FOLD_MS
       Set-MarginTop $p 0 $FOLD_MS
     }
@@ -653,17 +658,24 @@ function Exit-Compact($card) {
   $card.compact = $false; $card.settleAt = 0
   $root = $card.root
   $from = $root.ActualHeight
-  # Give the parts their natural height and gap back; the card's own height glides open (Complete-Expand).
+  # Give the parts their height and gap back, growing from zero on the same curve as the fold, so the
+  # timeline moves down smoothly instead of being pushed out of view; the card glides open (Complete-Expand).
+  $ms = if ($script:perf.anim -and -not $script:reduce) { 300 } else { 0 }
   foreach ($p in (Get-FoldParts $card)) {
     $p.BeginAnimation($P_Height, $null)
     $key = [System.Runtime.CompilerServices.RuntimeHelpers]::GetHashCode($p)
-    if ($card.foldMargins -and $card.foldMargins.ContainsKey($key)) { Set-MarginTop $p $card.foldMargins[$key] 0 }
+    if ($card.foldMargins -and $card.foldMargins.ContainsKey($key)) { Set-MarginTop $p $card.foldMargins[$key] $ms }
   }
-  Set-MarginTop $card.JobPanel 9 0
-  foreach ($p in @($card.NowPanel, $card.JobHead, $card.TurnText)) { $p.Visibility = 'Visible' }
+  Set-MarginTop $card.JobPanel 9 $ms
+  foreach ($p in @($card.NowPanel, $card.JobHead, $card.TurnText)) {
+    $p.Visibility = 'Visible'
+    if ($ms -gt 0) { $p.ClipToBounds = $true; Set-SoftAnim $p $P_Height 0 (Get-NaturalHeight $p) $ms 0 $true }
+  }
   $i = 0
   foreach ($p in (Get-FoldParts $card)) { if ($script:perf.anim) { Move-To $p $P_Opacity 1 220 'out' ($i * 40) } else { $p.BeginAnimation($P_Opacity, $null); $p.Opacity = 1 }; $i++ }
-  if ($script:perf.anim) { Move-To $card.JobBarScale $P_ScaleY 1 280 } else { $card.JobBarScale.BeginAnimation($P_ScaleY, $null); $card.JobBarScale.ScaleY = 1 }
+  if ($script:perf.anim) { Set-SoftAnim $card.JobBarScale $P_ScaleY $card.JobBarScale.ScaleY 1 300 } else { $card.JobBarScale.BeginAnimation($P_ScaleY, $null); $card.JobBarScale.ScaleY = 1 }
+  $card.Clock.FontWeight = 'SemiBold'; $card.Clock.MaxWidth = [double]::PositiveInfinity
+  if ($script:perf.anim) { $card.Clock.Opacity = 0.2; Move-To $card.Clock $P_Opacity 1 260 }
   $card.expandFrom = if ($script:perf.anim -and -not $script:reduce) { $from } else { -1 }
 }
 # Called after the card's content is filled in: glide from the old height to the new natural one.
@@ -673,7 +685,7 @@ function Complete-Expand($card) {
   $root = $card.root; $root.BeginAnimation($P_Height, $null)
   if ($from -lt 0) { return }
   $root.ClipToBounds = $true
-  Set-HeightAnim $root $from (Get-NaturalHeight $root) 280 $true
+  Set-SoftAnim $root $P_Height $from (Get-NaturalHeight $root) 300 0 $true   # same curve as the parts inside
 }
 # A card whose chat is no longer shown: fade, shrink a little from the top edge, and collapse
 # (with the gap above it), slower and gentler than a snap. Returns ms until it can be removed.
@@ -1039,7 +1051,8 @@ function Draw-Team($card, $s, [double]$now, [bool]$running) {
 
 # Fills one card for a chat that is working.
 function Update-ActiveCard($card, $sid, $s, [double]$now, [int]$maxRows) {
-  if ($card.compact) { Exit-Compact $card }   # the chat is working again: open the card back up
+  # Working again (or "Show only progress" turned off): open the card back up.
+  if ($card.compact -and -not $prefs.progressOnly) { Exit-Compact $card }
   $card.finSeen = $null
   $card.Clock.SetResourceReference([System.Windows.Controls.TextBlock]::ForegroundProperty, 'TextMain')
   $t0 = [double]$s.turnStartedAt
@@ -1126,9 +1139,34 @@ function Update-ActiveCard($card, $sid, $s, [double]$now, [int]$maxRows) {
   } else {
     Set-Shown $card.Notice $false $now
   }
+  if ($prefs.progressOnly) { Set-ProgressRow $card $spent $now }
 
   if (-not $card.wasBusy) { $card.busySince = $now }
   $card.wasBusy = $true
+}
+
+# The slim row's right-hand text: lighter than the chat name, and never more than 60% of the row,
+# so the name always keeps room (it is cut with an ellipsis instead).
+function Set-RowTextStyle($card) {
+  $card.Clock.FontWeight = 'Normal'
+  $card.Clock.TextTrimming = 'CharacterEllipsis'
+  $w = $card.root.ActualWidth; if ($w -gt 0) { $card.Clock.MaxWidth = [math]::Max(120, $w * 0.6) }
+}
+
+# "Show only progress": a working card as one slim row: the chat name, then what it is doing,
+# the percentage and the time left, with the live coloured timeline as a thin line underneath.
+# The card is filled in as usual first (so the numbers are current), then folded or kept folded.
+function Set-ProgressRow($card, [double]$spent, [double]$now) {
+  if (-not $card.compact) { Enter-Compact $card $now }
+  elseif ($card.settleAt -and $now -ge $card.settleAt) { Complete-Compact $card }
+  if (-not $card.settleAt) {
+    # Filling the card in may have shown a part again (a new step, a notice): keep them folded.
+    foreach ($p in (Get-FoldParts $card)) { if ($p.Visibility -ne 'Collapsed') { $p.BeginAnimation($P_Height, $null); $p.Visibility = 'Collapsed' } }
+  }
+  $step = ($card.NowLabel.Text -replace '\s+\(\+\d+ more in parallel\)$', '')
+  $nums = if ($null -ne $card.jobPct) { '{0}%  ·  ~{1} left' -f [math]::Floor($card.jobPct), (Format-Ms $card.jobLeft) } else { '{0}  ·  learning' -f (Format-Ms $spent) }
+  $card.Clock.Text = if ($step) { "$step  ·  $nums" } else { $nums }
+  Set-RowTextStyle $card
 }
 
 # Fills one card for a chat that finished in the last two minutes.
@@ -1147,9 +1185,10 @@ function Update-FinishedCard($card, $s, [double]$now, [int]$maxRows, [bool]$othe
   $age = $now - $t1
   if (-not $card.finSeen) { $card.finSeen = $now }
   if ($card.compact) { if ($card.settleAt -and $now -ge $card.settleAt) { Complete-Compact $card } }
-  elseif ($others -and ($now - $card.finSeen) -ge $HOLD_MS -and ($DONE_MS - $age) -gt 2000) { Enter-Compact $card $now }
+  elseif ($prefs.progressOnly -or ($others -and ($now - $card.finSeen) -ge $HOLD_MS -and ($DONE_MS - $age) -gt 2000)) { Enter-Compact $card $now }
   if ($card.compact) {
     $card.Clock.Foreground = $script:T.sub   # the summary sits quieter than the chat name
+    Set-RowTextStyle $card
     $card.Clock.Text = 'Done  ·  {0}  ·  {1} steps{2}' -f (Format-Ms ($t1 - $t0)), (Get-List $s.log).Count, $(if ($fails) { "  ·  $fails failed" } else { '' })
     Draw-Segments $card $tl.segs $t0 ([math]::Max($t1 - $t0, 1000))
     return
