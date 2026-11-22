@@ -616,12 +616,15 @@ function Get-FoldParts($card) { @($card.NowPanel, $card.JobHead, $card.TurnText,
 function Enter-Compact($card, [double]$now) {
   $card.compact = $true
   $parts = Get-FoldParts $card
-  if ($Snapshot -or -not $script:perf.anim -or $script:reduce) {
+  # A card that has never been on screen (a new chat in "Show only progress") has nothing to animate
+  # from: fold it instantly, so it grows in at the slim row's height instead of full size first.
+  $unseen = -not $card.root.IsLoaded
+  if ($unseen -or $Snapshot -or -not $script:perf.anim -or $script:reduce) {
     foreach ($p in $parts) { $p.BeginAnimation($P_Height, $null); $p.BeginAnimation($P_Opacity, $null); $p.Visibility = 'Collapsed' }
     $card.JobBarScale.BeginAnimation($P_ScaleY, $null); $card.JobBarScale.ScaleY = 0.25
     $card.JobPanel.Margin = '0,7,0,0'
     # Windows animations off: a quick fade instead of movement. Saver mode: instant.
-    if ($script:reduce -and $script:perf.anim -and -not $Snapshot) { $card.root.BeginAnimation($P_Opacity, $null); $card.root.Opacity = 0; Move-To $card.root $P_Opacity 1 200 }
+    if ($script:reduce -and $script:perf.anim -and -not $Snapshot -and -not $unseen) { $card.root.BeginAnimation($P_Opacity, $null); $card.root.Opacity = 0; Move-To $card.root $P_Opacity 1 200 }
     $card.settleAt = 0
     return
   }
@@ -1150,7 +1153,9 @@ function Update-ActiveCard($card, $sid, $s, [double]$now, [int]$maxRows) {
 function Set-RowTextStyle($card) {
   $card.Clock.FontWeight = 'Normal'
   $card.Clock.TextTrimming = 'CharacterEllipsis'
-  $w = $card.root.ActualWidth; if ($w -gt 0) { $card.Clock.MaxWidth = [math]::Max(120, $w * 0.6) }
+  # A new card has no width yet on its first refresh: use the list's width instead.
+  $w = $card.root.ActualWidth; if ($w -le 0) { $w = $ui.Sessions.ActualWidth }
+  if ($w -gt 0) { $card.Clock.MaxWidth = [math]::Max(120, $w * 0.6) }
 }
 
 # "Show only progress": a working card as one slim row: the chat name, then what it is doing,
@@ -1164,7 +1169,9 @@ function Set-ProgressRow($card, [double]$spent, [double]$now) {
     foreach ($p in (Get-FoldParts $card)) { if ($p.Visibility -ne 'Collapsed') { $p.BeginAnimation($P_Height, $null); $p.Visibility = 'Collapsed' } }
   }
   $step = ($card.NowLabel.Text -replace '\s+\(\+\d+ more in parallel\)$', '')
-  $nums = if ($null -ne $card.jobPct) { '{0}%  ·  ~{1} left' -f [math]::Floor($card.jobPct), (Format-Ms $card.jobLeft) } else { '{0}  ·  learning' -f (Format-Ms $spent) }
+  # Short times in the slim row ("~1m" not "~1m 00s"), so the chat name keeps as much room as it can.
+  $left = (Format-Ms $card.jobLeft) -replace ' 00s$', ''
+  $nums = if ($null -ne $card.jobPct) { '{0}%  ·  ~{1} left' -f [math]::Floor($card.jobPct), $left } else { '{0}  ·  learning' -f ((Format-Ms $spent) -replace ' 00s$', '') }
   $card.Clock.Text = if ($step) { "$step  ·  $nums" } else { $nums }
   Set-RowTextStyle $card
 }
