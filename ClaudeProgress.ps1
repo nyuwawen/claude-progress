@@ -305,6 +305,8 @@ $bc = New-Object System.Windows.Media.BrushConverter
 function New-Brush([string]$hex) { $b = $bc.ConvertFromString($hex); $b.Freeze(); $b }
 function New-Color([string]$hex) { [System.Windows.Media.ColorConverter]::ConvertFromString($hex) }
 function Request-SettingsSync {}   # replaced once the Settings window code is defined (below)
+$script:revealing = $false   # true while the slim bar opens or closes (see Set-Mini)
+$script:shrinkUntil = 0      # the chats fade out until then, after closing to the bar
 
 # Current theme's brushes, used by code that draws (bars, activity rows, legend).
 $script:T = @{}
@@ -715,7 +717,9 @@ function Set-Mini([bool]$on, [bool]$save = $true) {
   $ui.Shell.BeginAnimation([System.Windows.FrameworkElement]::WidthProperty, $null)
   $ui.Shell.BeginAnimation([System.Windows.FrameworkElement]::HeightProperty, $null)
   $ui.Shell.Width = $newW
-  if ($save) { Save-Prefs; try { Update-View } catch {} }
+  # The cards are hidden in the slim bar, so when it opens (or closes) they take their new shape at
+  # once: the window then grows to their real final size instead of to their old size and snapping.
+  if ($save) { Save-Prefs; $script:revealing = $true; try { Update-View } catch {} finally { $script:revealing = $false } }
   Request-SettingsSync
   if ($morph) {
     $ui.Shell.Measure((New-Object System.Windows.Size($newW, [double]::PositiveInfinity)))
@@ -723,7 +727,19 @@ function Set-Mini([bool]$on, [bool]$save = $true) {
     $ui.Shell.ClipToBounds = $true
     Set-PropAnim $ui.Shell $P_Width $oldW $newW 300 $true
     Set-PropAnim $ui.Shell $P_Height $oldH $newH 300 $true
-    if (-not $on) { $ui.Sessions.BeginAnimation($P_Opacity, $null); $ui.Sessions.Opacity = 0; Move-To $ui.Sessions $P_Opacity 1 300 }
+    if (-not $on) { $script:shrinkUntil = 0; $ui.Sessions.BeginAnimation($P_Opacity, $null); $ui.Sessions.Opacity = 0; Move-To $ui.Sessions $P_Opacity 1 300 }
+    else {
+      # Closing to the bar: the chats stay (clipped) and fade out while the window shrinks around them,
+      # so there is never an empty frame; Update-View hides them once the shrink is done.
+      $script:shrinkUntil = [double][DateTimeOffset]::UtcNow.ToUnixTimeMilliseconds() + 280
+      # Hidden exactly as the shrink ends (not at the next refresh), so the window never grows back to fit them.
+      $hideT = New-Object System.Windows.Threading.DispatcherTimer
+      $hideT.Interval = [TimeSpan]::FromMilliseconds(280)
+      $hideT.Add_Tick({ param($sender, $ev) $sender.Stop(); if ($prefs.mini) { $ui.Sessions.Visibility = 'Collapsed' } })
+      $hideT.Start()
+      $ui.Sessions.Visibility = 'Visible'; $ui.Sessions.BeginAnimation($P_Opacity, $null); $ui.Sessions.Opacity = 1; Move-To $ui.Sessions $P_Opacity 0 250
+      $ui.Legend.Visibility = 'Collapsed'
+    }
   }
 }
 # Affordance: a soft highlight under the button while the pointer is over it (150ms ease).
@@ -1198,7 +1214,7 @@ function Enter-Compact($card, [double]$now) {
   $parts = Get-FoldParts $card
   # A card that has never been on screen (a new chat in "Show only progress") has nothing to animate
   # from: fold it instantly, so it grows in at the slim row's height instead of full size first.
-  $unseen = -not $card.root.IsLoaded
+  $unseen = -not $card.root.IsLoaded -or $script:revealing   # (or it is being revealed from the slim bar)
   if ($unseen -or $Snapshot -or -not $script:perf.anim -or $script:reduce) {
     foreach ($p in $parts) { $p.BeginAnimation($P_Height, $null); $p.BeginAnimation($P_Opacity, $null); $p.Visibility = 'Collapsed' }
     $card.JobBarScale.BeginAnimation($P_ScaleY, $null); $card.JobBarScale.ScaleY = 0.25
@@ -1243,7 +1259,8 @@ function Exit-Compact($card) {
   $from = $root.ActualHeight
   # Give the parts their height and gap back, growing from zero on the same curve as the fold, so the
   # timeline moves down smoothly instead of being pushed out of view; the card glides open (Complete-Expand).
-  $ms = if ($script:perf.anim -and -not $script:reduce) { 300 } else { 0 }
+  $instant = $script:revealing -or -not $script:perf.anim -or $script:reduce   # revealed from the slim bar: no glide
+  $ms = if (-not $instant) { 300 } else { 0 }
   foreach ($p in (Get-FoldParts $card)) {
     $p.BeginAnimation($P_Height, $null)
     $key = [System.Runtime.CompilerServices.RuntimeHelpers]::GetHashCode($p)
@@ -1255,11 +1272,15 @@ function Exit-Compact($card) {
     if ($ms -gt 0) { $p.ClipToBounds = $true; Set-SoftAnim $p $P_Height 0 (Get-NaturalHeight $p) $ms 0 $true }
   }
   $i = 0
-  foreach ($p in (Get-FoldParts $card)) { if ($script:perf.anim) { Move-To $p $P_Opacity 1 220 'out' ($i * 40) } else { $p.BeginAnimation($P_Opacity, $null); $p.Opacity = 1 }; $i++ }
-  if ($script:perf.anim) { Set-SoftAnim $card.JobBarScale $P_ScaleY $card.JobBarScale.ScaleY 1 300 } else { $card.JobBarScale.BeginAnimation($P_ScaleY, $null); $card.JobBarScale.ScaleY = 1 }
+  foreach ($p in (Get-FoldParts $card)) {
+    $p.BeginAnimation($P_Opacity, $null)
+    if (-not $instant) { $p.Opacity = 0; Move-To $p $P_Opacity 1 200 'out' (80 + $i * 40) } else { $p.Opacity = 1 }
+    $i++
+  }
+  if (-not $instant) { Set-SoftAnim $card.JobBarScale $P_ScaleY $card.JobBarScale.ScaleY 1 300 } else { $card.JobBarScale.BeginAnimation($P_ScaleY, $null); $card.JobBarScale.ScaleY = 1 }
   $card.Clock.FontWeight = 'SemiBold'; $card.Clock.MaxWidth = [double]::PositiveInfinity
-  if ($script:perf.anim) { $card.Clock.Opacity = 0.2; Move-To $card.Clock $P_Opacity 1 260 }
-  $card.expandFrom = if ($script:perf.anim -and -not $script:reduce) { $from } else { -1 }
+  if (-not $instant) { $card.Clock.Opacity = 0.2; Move-To $card.Clock $P_Opacity 1 260 } else { $card.Clock.BeginAnimation($P_Opacity, $null); $card.Clock.Opacity = 1 }
+  $card.expandFrom = if (-not $instant) { $from } else { -1 }
 }
 # Called after the card's content is filled in: glide from the old height to the new natural one.
 function Complete-Expand($card) {
@@ -1976,7 +1997,7 @@ function Update-View {
     Show-Element $root 6 ($nth * 60)
     $nth++
     # Grow the new card open, so the window extends smoothly instead of jumping.
-    if ($script:perf.anim -and -not $Snapshot) {
+    if ($script:perf.anim -and -not $Snapshot -and -not $script:revealing) {   # (opening from the slim bar: the window grows instead)
       $root.ClipToBounds = $true
       $root.BeginAnimation($P_Height, $null)
       Set-HeightAnim $root 0 (Get-NaturalHeight $root) 280 $true
@@ -2002,10 +2023,16 @@ function Update-View {
       else { 'Claude is idle' }
   }
   if ($prefs.mini) {
-    # Minimized: header line + thin bar for the first working chat.
-    $ui.Sessions.Visibility = 'Collapsed'; $ui.Legend.Visibility = 'Collapsed'
+    # Minimized: header line + thin bar for the first working chat. (Right after minimizing, the chats
+    # stay a moment longer while they fade out with the shrink: see Set-Mini.)
+    if ($now -ge [double]$script:shrinkUntil) { $ui.Sessions.Visibility = 'Collapsed' }
+    $ui.Legend.Visibility = 'Collapsed'
+    # The bar just appeared: put its fill where the work is, instead of growing it from zero.
+    $snapFill = $ui.MiniTrack.Visibility -ne 'Visible'
     $ui.Title.Text = if ($needN -gt 1) { "$needN need you" } elseif ($needN -gt 0) { 'Needs you' } elseif ($active.Count -gt 0) { 'Working' } elseif ($finished.Count -gt 0) { 'Finished' } else { 'Idle' }
-    $tw = $ui.MiniTrack.ActualWidth; if ($tw -le 0) { $tw = 300 }
+    # The bar's final width (330 minus padding and border), not its width mid-shrink, so the fill
+    # never overshoots while the window is still closing to the bar.
+    $tw = [double]$ui.Shell.Width - 30; if ($tw -le 0) { $tw = 300 }
     $more = if ($active.Count -gt 1) { "$($active.Count) chats  ·  " } else { '' }
     $needC = @($needIds | ForEach-Object { $script:cards[$_] }) | Select-Object -First 1
     if ($needC) {
@@ -2015,14 +2042,15 @@ function Update-View {
       $longest = @($needIds | ForEach-Object { $script:cards[$_] } | Sort-Object { [double]$_.waitNow } -Descending) | Select-Object -First 1
       $ui.Count.Text = if ($needN -gt 1) { 'longest {0}' -f (Format-Ms $longest.waitNow) } else { '{0}  ·  {1}' -f ($needC.Chat.Text -replace '\s+·.*$', ''), (Format-Ms $needC.waitNow) }
       $ui.MiniFill.Background = $script:T.wait
-      if ($null -ne $needC.jobPct) { Move-To $ui.MiniFill $P_Width ($tw * $needC.jobPct / 100) 250 }
+      if ($null -ne $needC.jobPct) { if ($snapFill) { $ui.MiniFill.BeginAnimation($P_Width, $null); $ui.MiniFill.Width = $tw * $needC.jobPct / 100 } else { Move-To $ui.MiniFill $P_Width ($tw * $needC.jobPct / 100) 250 } }
     } elseif ($active.Count -gt 0) {
       $ui.MiniFill.SetResourceReference([System.Windows.Controls.Border]::BackgroundProperty, 'Accent')
       $c = $script:cards[$active[0].id]
       $ui.MiniTrack.Visibility = 'Visible'
       if ($null -ne $c.jobPct) {
         $ui.Count.Text = ('{0}{1}%  ·  ~{2} left' -f $more, [math]::Floor($c.jobPct), (Format-Ms $c.jobLeft))
-        Move-To $ui.MiniFill $P_Width ($tw * $c.jobPctAhead / 100) $LEAD 'linear'
+        if ($snapFill) { $ui.MiniFill.BeginAnimation($P_Width, $null); $ui.MiniFill.Width = $tw * $c.jobPct / 100 }
+        else { Move-To $ui.MiniFill $P_Width ($tw * $c.jobPctAhead / 100) $LEAD 'linear' }
       } else {
         $ui.Count.Text = ('{0}{1} elapsed  ·  learning' -f $more, (Format-Ms $c.jobSpent))
         Move-To $ui.MiniFill $P_Width ($tw * 0.15) 250
