@@ -1,4 +1,4 @@
-﻿# Claude Progress - installer. Run Install.cmd (double-click) rather than this file directly.
+# Claude Progress - installer. Run Install.cmd (double-click) rather than this file directly.
 #   -Yes      skip the question (for scripted installs); the list of changes is still shown
 #   -Outside  internal: the second half of an install started from inside the Claude app
 param([switch]$Outside, [switch]$Yes)
@@ -22,9 +22,9 @@ if (-not $Outside) {
   Write-Host "  2. Add 8 hooks to $settingsFile"
   Write-Host '     (SessionStart, UserPromptSubmit, PreToolUse, PostToolUse, PostToolUseFailure, Stop, SubagentStart, SubagentStop).'
   Write-Host '     A backup is saved first as settings.json.before-claude-progress.bak. Your other settings and hooks are kept.'
-  Write-Host '  3. Add Start menu shortcuts (app, demo, uninstaller) and a shortcut that opens the window when you sign in'
+  Write-Host '  3. Add Start menu shortcuts (app with its settings, demo, uninstaller) and a shortcut that opens the window when you sign in'
   Write-Host "  4. Add a Task Scheduler entry 'Claude Progress' that reopens the window when Claude starts (runs as you, no admin)"
-  Write-Host '  5. Open the window now'
+  Write-Host '  5. Open the window now, with its Settings'
   Write-Host 'It never: asks for admin rights, sends anything over the network, or changes any other setting.' -ForegroundColor DarkGray
   Write-Host "Node.js: $nodeFound" -ForegroundColor DarkGray
   Write-Host 'To undo it all later: Start menu > Claude Progress > Uninstall Claude Progress.' -ForegroundColor DarkGray
@@ -79,7 +79,7 @@ Remove-Item (Join-Path $env:LOCALAPPDATA 'ClaudeProgress') -Recurse -Force -Erro
 foreach ($f in 'hook.js','demo.js','settings-hooks.js','ClaudeProgress.ps1','chat-watch.ps1','uninstall.ps1','Uninstall.cmd','VERSION') {
   Copy-Item (Join-Path $src $f) (Join-Path $dest $f) -Force
 }
-# The style picker's preview pictures (optional: the picker says so if they are missing).
+# The Settings window's preview pictures (optional: it says so if they are missing).
 $prev = Join-Path $src 'previews'
 if (Test-Path $prev) {
   New-Item -ItemType Directory -Force -Path (Join-Path $dest 'previews') | Out-Null
@@ -107,8 +107,10 @@ function New-Shortcut($path, $extra, $desc) {
   $s.IconLocation = 'shell32.dll,265'
   $s.Save()
 }
-New-Shortcut (Join-Path $menu 'Claude Progress.lnk') '' 'Shows what Claude is doing and how long is left'
+# The Start menu entry opens Settings; the sign-in shortcut and the task start quietly (no argument).
+New-Shortcut (Join-Path $menu 'Claude Progress.lnk') '-Settings' 'Shows what Claude is doing and how long is left, and its settings'
 New-Shortcut (Join-Path $menu 'Claude Progress Demo.lnk') '-Demo' 'Plays a fake job to show how it looks'
+Remove-Item (Join-Path $menu 'Claude Progress - Choose a style.lnk') -Force -ErrorAction SilentlyContinue   # from an earlier version
 $u = $shell.CreateShortcut((Join-Path $menu 'Uninstall Claude Progress.lnk'))
 $u.TargetPath = Join-Path $dest 'Uninstall.cmd'; $u.WorkingDirectory = $dest; $u.Save()
 New-Shortcut (Join-Path ([Environment]::GetFolderPath('Startup')) 'Claude Progress.lnk') '' 'Claude Progress'
@@ -126,11 +128,26 @@ try {
   $haveTask = $true
 } catch { Write-Host "Couldn't add the Task Scheduler entry ($($_.Exception.Message)); the window still starts with Windows." -ForegroundColor Yellow }
 
-# 6. Start it
-if ($haveTask) { Start-ScheduledTask -TaskName 'Claude Progress' }
-else { Start-Process powershell.exe -ArgumentList $launchArgs -WindowStyle Hidden }
+# 6. Start it. After a fresh install or an upgrade from before settings version 2, or if the style
+#    Settings window was never seen, the window opens it:
+#    - you ran this yourself: start it straight from here with -Settings, so Settings opens in front
+#      with the keyboard (a Task Scheduler start may not take the foreground). This happens every time;
+#    - it finished in the background (-Outside): the usual task start, plus a timed "open-picker" note
+#      that opens it quietly, never taking the keyboard.
+$wantPicker = $true
+try {
+  $wj = Get-Content -LiteralPath (Join-Path $data 'window.json') -Raw -ErrorAction Stop | ConvertFrom-Json
+  if (($wj.prefsVersion -as [int]) -ge 2 -and $wj.pickerSeen) { $wantPicker = $false }
+} catch {}
+if (-not $Outside) {
+  Start-Process powershell.exe -ArgumentList "$launchArgs -Settings" -WindowStyle Hidden
+} else {
+  if ($wantPicker) { [IO.File]::WriteAllText((Join-Path $data 'open-picker'), [string][DateTimeOffset]::UtcNow.ToUnixTimeMilliseconds()) }
+  if ($haveTask) { Start-ScheduledTask -TaskName 'Claude Progress' }
+  else { Start-Process powershell.exe -ArgumentList $launchArgs -WindowStyle Hidden }
+}
 
 Write-Host ''
 Write-Host 'Done. The Claude Progress window is in the bottom-right corner.' -ForegroundColor Green
 Write-Host 'Restart Claude (or start a new session) so it picks up the new hooks.'
-Write-Host 'Start menu > Claude Progress has the app, a demo and an uninstaller.'
+Write-Host 'Start menu > Claude Progress opens the window and its Settings. There is also a demo and an uninstaller.'

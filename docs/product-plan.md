@@ -45,7 +45,7 @@ Segment B (multi-agent) gets the existing Team view for free. Segment C (desktop
 
 **Why bundle Node for segment A:** people who install Claude Code with the native installer may not have Node (ASSUMED). In M1 we ask each tester "did you already have Node?" to check this before M3 builds the bundle.
 
-**Node decision rule:** if 4 or more of the 5 testers already had Node, we drop the Node bundle from M3 and move its 3 days into M4's bug-fix buffer.
+**Node decision rule:** if 4 or more of the 5 testers already had Node, we drop the Node bundle from M3 and use its 3 days for style-menu S2 in M3, before the launch posts (so new users can find the styles at launch). See [style-menu-plan.md](style-menu-plan.md).
 
 | In scope (12 weeks) | Out of scope |
 | --- | --- |
@@ -89,7 +89,7 @@ Segment B (multi-agent) gets the existing Team view for free. Segment C (desktop
 
 **Risk retired:** install friction and trust (blocker #1).
 
-### M2 (weeks 4-6): An estimate worth trusting (10-11.5 person-days)
+### M2 (weeks 4-6): An estimate worth trusting (8-9.5 person-days; 11.5-13 with style-menu S1, see the day-12 cut list in [style-menu-plan.md](style-menu-plan.md))
 
 - **Goal:** make the core promise true for segment A.
 - **Deliverables and effort:**
@@ -100,14 +100,12 @@ Segment B (multi-agent) gets the existing Team view for free. Segment C (desktop
   | Replay harness that backtests ETAs on the logged jobs | 2.5 |
   | CPU baseline measured before any change | 0.5 |
   | Cheaper default mode: lower default frame rate and update rate | 1.5-2 |
-  | Toast for jobs over 2 minutes | 1.5 |
   | Sign the release if signing is approved | 0.5 |
 
 - **Exit criteria:**
   - On at least 50 logged jobs (the maintainer's plus any donated by testers), median absolute ETA error is at least 30% below the single-bucket baseline.
   - The range contains the actual time on at least 70% of jobs.
   - Default-mode CPU passes the CPU test defined below.
-  - The toast fires in a functional test.
 - **CPU test:**
   - **Setup:** run a 10-minute replayed job on the reference machine, an AMD Ryzen 9 8940HX with 32 logical cores, on Windows 11.
   - **Sampling:** log `\Process(*)\% Processor Time` and `\Process(*)\ID Process` every second with `typeperf` to a CSV. The sampler is `typeperf.exe`, so it cannot match the processes being measured.
@@ -142,19 +140,21 @@ Segment B (multi-agent) gets the existing Team view for free. Segment C (desktop
   - The Discussion is pinned.
 - **Risk retired:** Node dependency (blocker #2) if the bundle ships; if the decision rule drops it, blocker #2 stays open for segment C. Also silent chat breakage at launch, and having no distribution.
 
-### M4 (weeks 10-12): Harden and decide (8-9 person-days; 11-12 if the Node bundle is dropped)
+### M4 (weeks 10-12): Harden and decide (9.5-10.5 person-days including the toast; see the style-menu note below)
 
 - **Goal:** keep launch users and make the kill/pivot decision.
 - **Deliverables and effort:**
 
   | Deliverable | Days |
   | --- | --- |
+  | Toast for jobs over 2 minutes (moved from M2; goes first, because the pivot plan relies on toasts) | 1.5 |
   | UI Automation fixture tests, including a non-English fixture | 3 |
-  | Bug-fix buffer for launch issues (+3 if the Node bundle is dropped) | 3-4 |
+  | Bug-fix buffer for launch issues | 3-4 |
   | `v1.2` Release | 1 |
   | Week-12 review memo | 1 |
 
-- **Exit criteria:** fixture tests run in CI, `v1.2` is published, and the week-12 review below is complete with a written decision.
+- **Style-menu note:** M4's spare days cannot hold the toast plus style-menu S2 unless the Node bundle is dropped. If it is dropped, S2 uses the freed 3 days in M3 before the posts, and S3 (1.25 days) follows the toast in M4. If it ships, S2 (2.5 days) comes right after the toast, and the bug-fix buffer stays at 3 days. See [style-menu-plan.md](style-menu-plan.md).
+- **Exit criteria:** the toast fires in a functional test, fixture tests run in CI, `v1.2` is published, and the week-12 review below is complete with a written decision.
 - **Week-12 review targets:**
 
   | Measure | Target |

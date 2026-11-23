@@ -102,11 +102,11 @@ Right-click the window → **Theme**.
 
 ## ⚙️ Options
 
-Right-click the window for everything. Drag it anywhere; it remembers its place and your settings.
+Open **Settings** for everything: start **Claude Progress** from the Start menu, or click the **gear** (⚙ next to minimize). Style (with a live preview), theme, size, performance and options are all in one window, and changes apply right away. Right-click still has a quick menu. Drag the window anywhere; it remembers its place and your settings.
 
 | Menu | Choices |
 | --- | --- |
-| **Choose a style...** | pick Detailed, Simple, Show only progress or Minimized bar, with a preview of each (also shown once on first start) |
+| **Settings...** | the Settings window: Detailed, Simple, Show only progress or Minimized bar with a live preview, plus theme, size, performance and options. Opens when you start Claude Progress yourself (even while the window is hidden); starting with Windows or with Claude stays quiet |
 | **Minimize** | slim bar mode (also the **–** button, or double-click the window) |
 | **Theme** | Normal · DADA · REN |
 | **Performance** | Saver · Neutral · Full power |
@@ -161,7 +161,7 @@ The window (`ClaudeProgress.ps1`) is WPF running in Windows PowerShell 5.1, so t
 
 - Copies the app to `%USERPROFILE%\.claude-progress\app`
 - Adds eight hooks to `~/.claude/settings.json`. A backup is saved first as `settings.json.before-claude-progress.bak`, and your other settings and hooks are kept. Running it twice doesn't duplicate anything.
-- Adds Start menu shortcuts (**Claude Progress**, **Claude Progress Demo**, **Uninstall Claude Progress**)
+- Adds Start menu shortcuts (**Claude Progress**, which also opens Settings, **Claude Progress Demo**, **Uninstall Claude Progress**)
 - Starts the app with Windows, and adds a **Claude Progress** task in Task Scheduler that the hook uses to reopen the window whenever a Claude session starts and it isn't running
 
 </details>

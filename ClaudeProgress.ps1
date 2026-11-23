@@ -14,11 +14,14 @@
   raised (the bar drops back), the extra time is added to that step, and a notice says so.
   Right-click the window for size, theme and other options; Ctrl + scroll resizes it.
 #>
-param([switch]$Demo, [switch]$SelfTest, [string]$Theme, [string]$Snapshot, [string]$Mode, [switch]$StylePreviews)
+param([switch]$Demo, [switch]$SelfTest, [string]$Theme, [string]$Snapshot, [string]$Mode, [switch]$StylePreviews, [switch]$Settings, [switch]$ChooseStyle)
+# -Settings: open the Settings window (Start menu > Claude Progress), in the running copy if there is
+#   one. -ChooseStyle is the older name for it. Starts without it (sign-in, Claude) stay quiet.
 # -Snapshot <folder>: renders the window in each theme, with sample activity, to PNG files there.
 #   Add -StylePreviews to render the style picker's previews instead (style-<style>-<theme>.png).
 
 $ErrorActionPreference = 'Stop'
+if ($ChooseStyle) { $Settings = [switch]$true }
 # Any error that would stop the app is written to %USERPROFILE%\.claude-progress\window-errors.log first.
 trap {
   try {
@@ -50,16 +53,25 @@ $prefsFile = Join-Path $root 'window.json'
 # Only one copy in normal mode.
 #  - If another copy is still closing (you chose Exit a moment ago), wait for it, then start.
 #  - If another copy is running, ask it to show itself (it may be hidden while Claude is idle), then quit.
-$script:showSignal = $null
+#    With -Settings, ask it to open the Settings window instead, and let it come to the front
+#    (you started this from the Start menu, so the picker may take the keyboard).
+$script:showSignal = $null; $script:styleSignal = $null
 if (-not $Demo -and -not $SelfTest -and -not $Snapshot) {
   $created = $false
   $script:showSignal = New-Object System.Threading.EventWaitHandle($false, 'AutoReset', 'Local\ClaudeProgressShow')
+  $script:styleSignal = New-Object System.Threading.EventWaitHandle($false, 'AutoReset', 'Local\ClaudeProgressSettings')
   $script:mutex = New-Object System.Threading.Mutex($false, 'Local\ClaudeProgressWindow')
   $owned = $false
   try {
     $owned = $script:mutex.WaitOne(0)
     if (-not $owned) {
-      [void]$script:showSignal.Set()            # a running copy shows itself right away
+      if ($Settings) {
+        try {
+          Add-Type -Namespace ClaudeProgress -Name Fg -MemberDefinition '[DllImport("user32.dll")] public static extern bool AllowSetForegroundWindow(int dwProcessId);'
+          [void][ClaudeProgress.Fg]::AllowSetForegroundWindow(-1)   # ASFW_ANY
+        } catch {}
+        [void]$script:styleSignal.Set()         # a running copy opens Settings
+      } else { [void]$script:showSignal.Set() } # a running copy shows itself right away
       $owned = $script:mutex.WaitOne(5000)      # or, if it was closing, we take over once it's gone
     }
   } catch [System.Threading.AbandonedMutexException] { $owned = $true }   # the last copy was closed abruptly
@@ -132,7 +144,7 @@ $catNames = [ordered]@{ read = 'Reading'; edit = 'Editing'; run = 'Running'; ren
     <Border x:Name="Shell" Width="440" HorizontalAlignment="Right" CornerRadius="14" Background="{DynamicResource ShellBg}" BorderBrush="{DynamicResource ShellBorder}" BorderThickness="1" Padding="14,12">
       <Border.ContextMenu>
         <ContextMenu>
-          <MenuItem x:Name="MenuStyle" Header="Choose a style..."/>
+          <MenuItem x:Name="MenuStyle" Header="Settings..." FontWeight="SemiBold"/>
           <Separator/>
           <MenuItem Header="Theme">
             <MenuItem x:Name="ThemeNormal" Header="Normal" IsCheckable="True"/>
@@ -172,6 +184,36 @@ $catNames = [ordered]@{ read = 'Reading'; edit = 'Editing'; run = 'Running'; ren
               <TextBlock x:Name="MinBtn" Text="&#xE921;" FontFamily="Segoe MDL2 Assets" FontSize="10" Foreground="{DynamicResource TextMuted}" HorizontalAlignment="Center" VerticalAlignment="Center"/>
             </Grid>
           </Border>
+          <!-- Settings: opens the Settings window. A real button, so Narrator and Tab find it. -->
+          <Button x:Name="GearBtn" DockPanel.Dock="Right" Width="24" Height="24" Margin="4,-4,0,-4" VerticalAlignment="Center" Cursor="Hand"
+                  ToolTip="Settings" AutomationProperties.Name="Settings" TabIndex="0">
+            <!-- The ring shows for keyboard focus only (WPF hides focus visuals after a mouse click). -->
+            <Button.FocusVisualStyle>
+              <Style>
+                <Setter Property="Control.Template">
+                  <Setter.Value>
+                    <ControlTemplate><Border CornerRadius="7" BorderThickness="2" BorderBrush="{DynamicResource Accent}"/></ControlTemplate>
+                  </Setter.Value>
+                </Setter>
+              </Style>
+            </Button.FocusVisualStyle>
+            <Button.Template>
+              <ControlTemplate TargetType="Button">
+                <Grid Background="Transparent">
+                  <Border x:Name="Hover" CornerRadius="6" Background="{DynamicResource Track}" Opacity="0"/>
+                  <TextBlock x:Name="Glyph" Text="&#xE713;" FontFamily="Segoe MDL2 Assets" FontSize="12" Foreground="{DynamicResource TextMuted}" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                </Grid>
+                <ControlTemplate.Triggers>
+                  <Trigger Property="IsMouseOver" Value="True">
+                    <Setter TargetName="Glyph" Property="Foreground" Value="{DynamicResource TextMain}"/>
+                    <Trigger.EnterActions><BeginStoryboard><Storyboard><DoubleAnimation Storyboard.TargetName="Hover" Storyboard.TargetProperty="Opacity" To="1" Duration="0:0:0.15"/></Storyboard></BeginStoryboard></Trigger.EnterActions>
+                    <Trigger.ExitActions><BeginStoryboard><Storyboard><DoubleAnimation Storyboard.TargetName="Hover" Storyboard.TargetProperty="Opacity" To="0" Duration="0:0:0.15"/></Storyboard></BeginStoryboard></Trigger.ExitActions>
+                  </Trigger>
+                  <Trigger Property="IsPressed" Value="True"><Setter TargetName="Glyph" Property="Opacity" Value="0.7"/></Trigger>
+                </ControlTemplate.Triggers>
+              </ControlTemplate>
+            </Button.Template>
+          </Button>
           <Border x:Name="Badge" DockPanel.Dock="Right" CornerRadius="8" Padding="8,1" Margin="8,0,0,0" VerticalAlignment="Center" Background="{DynamicResource BadgeBg}" BorderBrush="{DynamicResource Accent}" BorderThickness="1">
             <TextBlock x:Name="BadgeText" Foreground="{DynamicResource Accent}" FontFamily="Segoe UI" FontSize="10" FontWeight="Bold"/>
           </Border>
@@ -252,13 +294,14 @@ $cardNames = 'Dot','Clock','Chat','NowPanel','NowLabel','NowDetail','JobPanel','
 $window = [Windows.Markup.XamlReader]::Load((New-Object System.Xml.XmlNodeReader $windowXaml))
 $ui = @{}
 foreach ($n in 'Shell','GlowLayer','Glow','ModeSaver','ModeNeutral','ModeFull','Zoom','Badge','BadgeText','ThemeNormal','ThemeDADA','ThemeRen','Size75','Size100','Size125','Size150',
-               'Dot','Count','Title','Sessions','Legend','MinHit','MinHover','MinBtn','MiniTrack','MiniFill','MenuMini','MenuDetails','MenuProgressOnly','MenuChats','MenuHideIdle','MenuSound','MenuReset','MenuExit','MenuStyle') {
+               'Dot','Count','Title','Sessions','Legend','MinHit','MinHover','MinBtn','MiniTrack','MiniFill','MenuMini','MenuDetails','MenuProgressOnly','MenuChats','MenuHideIdle','MenuSound','MenuReset','MenuExit','MenuStyle','GearBtn') {
   $ui[$n] = $window.FindName($n)
 }
 
 $bc = New-Object System.Windows.Media.BrushConverter
 function New-Brush([string]$hex) { $b = $bc.ConvertFromString($hex); $b.Freeze(); $b }
 function New-Color([string]$hex) { [System.Windows.Media.ColorConverter]::ConvertFromString($hex) }
+function Request-SettingsSync {}   # replaced once the Settings window code is defined (below)
 
 # Current theme's brushes, used by code that draws (bars, activity rows, legend).
 $script:T = @{}
@@ -290,7 +333,7 @@ function Set-Theme([string]$name, [bool]$save = $true) {
   $grad = New-Object System.Windows.Media.LinearGradientBrush((New-Color $c.bg1), (New-Color $c.bg2), 60.0)
   $grad.Freeze()
   & $setRes 'ShellBg' $grad
-  $map = @{ ShellBorder = 'border'; CardBg = 'card'; CardBorder = 'cardBorder'; Track = 'track'; Divider = 'divider'; TextMain = 'text'; TextSub = 'sub'; TextMuted = 'muted'; Accent = 'accent'; Done = 'done'; NoticeBg = 'noticeBg'; NoticeText = 'noticeText' }
+  $map = @{ ShellBorder = 'border'; CardBg = 'card'; CardBorder = 'cardBorder'; Track = 'track'; Divider = 'divider'; TextMain = 'text'; TextSub = 'sub'; TextMuted = 'muted'; Accent = 'accent'; Done = 'done'; Fail = 'fail'; NoticeBg = 'noticeBg'; NoticeText = 'noticeText' }
   foreach ($k in $map.Keys) { & $setRes $k (New-Brush $c[$map[$k]]) }
   $badgeBg = New-Object System.Windows.Media.SolidColorBrush((New-Color $c.accent))
   $badgeBg.Opacity = 0.16; $badgeBg.Freeze()
@@ -308,6 +351,7 @@ function Set-Theme([string]$name, [bool]$save = $true) {
   Build-Legend
   $script:themeName = $name
   if ($save) { $prefs.theme = $name; Save-Prefs }
+  Request-SettingsSync
 }
 
 function New-Card {
@@ -340,123 +384,231 @@ $styles = [ordered]@{
 $pickerXaml = @'
 <Window xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        Title="Claude Progress - choose a style" SizeToContent="WidthAndHeight"
+        Title="Claude Progress - Settings" SizeToContent="WidthAndHeight"
         WindowStyle="None" AllowsTransparency="True" Background="Transparent" ResizeMode="NoResize"
         WindowStartupLocation="CenterScreen" Topmost="True" ShowInTaskbar="True" UseLayoutRounding="True">
   <Window.Resources>
-    <!-- Buttons: a soft light layer on hover, dimmer when pressed, a 2px accent ring for keyboard focus. -->
+    <!-- Keyboard focus ring (WPF shows focus visuals for the keyboard only, not after a click). -->
+    <Style x:Key="Ring">
+      <Setter Property="Control.Template"><Setter.Value><ControlTemplate>
+        <Border CornerRadius="10" Margin="-3" BorderThickness="2" BorderBrush="{DynamicResource Accent}"/>
+      </ControlTemplate></Setter.Value></Setter>
+    </Style>
+    <!-- Buttons: a soft light layer on hover, dimmer when pressed. -->
     <ControlTemplate x:Key="PickBtn" TargetType="Button">
       <Grid>
-        <Border x:Name="Ring" CornerRadius="10" Margin="-3" BorderThickness="2" BorderBrush="{DynamicResource Accent}" Visibility="Collapsed"/>
-        <Border x:Name="Bd" CornerRadius="8" Padding="18,8" Background="{TemplateBinding Background}">
+        <Border x:Name="Bd" CornerRadius="8" Padding="16,8" Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="{TemplateBinding BorderThickness}">
           <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
         </Border>
-        <Border x:Name="Lift" CornerRadius="8" Background="#FFFFFFFF" Opacity="0" IsHitTestVisible="False"/>
+        <Border x:Name="Lift" CornerRadius="8" Background="{TemplateBinding Tag}" Opacity="0" IsHitTestVisible="False"/>
       </Grid>
       <ControlTemplate.Triggers>
-        <Trigger Property="IsMouseOver" Value="True"><Setter TargetName="Lift" Property="Opacity" Value="0.12"/></Trigger>
+        <Trigger Property="IsMouseOver" Value="True"><Setter TargetName="Lift" Property="Opacity" Value="0.16"/></Trigger>
         <Trigger Property="IsPressed" Value="True"><Setter TargetName="Bd" Property="Opacity" Value="0.75"/><Setter TargetName="Lift" Property="Opacity" Value="0"/></Trigger>
-        <Trigger Property="IsKeyboardFocused" Value="True"><Setter TargetName="Ring" Property="Visibility" Value="Visible"/></Trigger>
       </ControlTemplate.Triggers>
     </ControlTemplate>
+    <!-- Segmented choice (Size, Performance). -->
+    <Style x:Key="Seg" TargetType="RadioButton">
+      <Setter Property="FocusVisualStyle" Value="{StaticResource Ring}"/>
+      <Setter Property="Cursor" Value="Hand"/>
+      <Setter Property="Template"><Setter.Value>
+        <ControlTemplate TargetType="RadioButton">
+          <Border x:Name="Bd" CornerRadius="6" Height="26" Background="Transparent">
+            <ContentPresenter x:Name="Cp" HorizontalAlignment="Center" VerticalAlignment="Center" TextElement.FontSize="12.5" TextElement.FontFamily="Segoe UI" TextElement.Foreground="{DynamicResource TextSub}"/>
+          </Border>
+          <ControlTemplate.Triggers>
+            <Trigger Property="IsMouseOver" Value="True"><Setter TargetName="Bd" Property="Background" Value="{DynamicResource CardBg}"/></Trigger>
+            <Trigger Property="IsChecked" Value="True">
+              <Setter TargetName="Bd" Property="Background" Value="{DynamicResource Accent}"/>
+              <Setter TargetName="Cp" Property="TextElement.Foreground" Value="#FF1A1816"/>
+              <Setter TargetName="Cp" Property="TextElement.FontWeight" Value="SemiBold"/>
+            </Trigger>
+          </ControlTemplate.Triggers>
+        </ControlTemplate>
+      </Setter.Value></Setter>
+    </Style>
+    <!-- Style card: a small picture of the window and the style's name. -->
+    <Style x:Key="Card" TargetType="RadioButton">
+      <Setter Property="FocusVisualStyle" Value="{StaticResource Ring}"/>
+      <Setter Property="Cursor" Value="Hand"/>
+      <Setter Property="Template"><Setter.Value>
+        <ControlTemplate TargetType="RadioButton">
+          <Grid>
+            <Border x:Name="Bd" CornerRadius="9" BorderThickness="1" Background="Transparent" BorderBrush="{DynamicResource CardBorder}" Padding="10,8">
+              <ContentPresenter/>
+            </Border>
+            <Border x:Name="Hover" CornerRadius="9" Background="{DynamicResource Track}" Opacity="0" IsHitTestVisible="False"/>
+          </Grid>
+          <ControlTemplate.Triggers>
+            <Trigger Property="IsMouseOver" Value="True"><Setter TargetName="Hover" Property="Opacity" Value="0.45"/></Trigger>
+            <Trigger Property="IsChecked" Value="True">
+              <Setter TargetName="Bd" Property="Background" Value="{DynamicResource CardBg}"/>
+              <Setter TargetName="Bd" Property="BorderBrush" Value="{DynamicResource Accent}"/>
+              <Setter TargetName="Hover" Property="Opacity" Value="0"/>
+            </Trigger>
+          </ControlTemplate.Triggers>
+        </ControlTemplate>
+      </Setter.Value></Setter>
+    </Style>
+    <!-- Theme swatch: drawn in its own theme's colours; the selected one gets a 2px border in its accent. -->
+    <Style x:Key="Swatch" TargetType="RadioButton">
+      <Setter Property="FocusVisualStyle" Value="{StaticResource Ring}"/>
+      <Setter Property="Cursor" Value="Hand"/>
+      <Setter Property="Template"><Setter.Value>
+        <ControlTemplate TargetType="RadioButton">
+          <Border x:Name="Bd" CornerRadius="8" Background="{TemplateBinding Background}" BorderBrush="{DynamicResource CardBorder}" BorderThickness="1">
+            <ContentPresenter/>
+          </Border>
+          <ControlTemplate.Triggers>
+            <Trigger Property="IsMouseOver" Value="True"><Setter TargetName="Bd" Property="BorderBrush" Value="{DynamicResource TextSub}"/></Trigger>
+            <Trigger Property="IsChecked" Value="True">
+              <Setter TargetName="Bd" Property="BorderBrush" Value="{Binding BorderBrush, RelativeSource={RelativeSource TemplatedParent}}"/>
+              <Setter TargetName="Bd" Property="BorderThickness" Value="2"/>
+            </Trigger>
+          </ControlTemplate.Triggers>
+        </ControlTemplate>
+      </Setter.Value></Setter>
+    </Style>
+    <!-- On/off switch (a restyled CheckBox): label on the left, switch on the right. -->
+    <Style x:Key="Switch" TargetType="CheckBox">
+      <Setter Property="FocusVisualStyle" Value="{StaticResource Ring}"/>
+      <Setter Property="Cursor" Value="Hand"/>
+      <Setter Property="Template"><Setter.Value>
+        <ControlTemplate TargetType="CheckBox">
+          <Grid Background="Transparent" MinHeight="44">
+            <Grid.ColumnDefinitions><ColumnDefinition/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+            <ContentPresenter VerticalAlignment="Center"/>
+            <Grid Grid.Column="1" Width="34" Height="18" Margin="12,0,0,0" VerticalAlignment="Center">
+              <Border x:Name="Track" CornerRadius="9" Background="{DynamicResource Track}" BorderBrush="{DynamicResource TextSub}" BorderThickness="1"/>
+              <Ellipse x:Name="Thumb" Width="12" Height="12" Margin="3,0,0,0" HorizontalAlignment="Left" Fill="{DynamicResource TextSub}">
+                <Ellipse.RenderTransform><TranslateTransform X="0"/></Ellipse.RenderTransform>
+              </Ellipse>
+            </Grid>
+          </Grid>
+          <ControlTemplate.Triggers>
+            <Trigger Property="IsChecked" Value="True">
+              <Setter TargetName="Track" Property="Background" Value="{DynamicResource Accent}"/>
+              <Setter TargetName="Track" Property="BorderThickness" Value="0"/>
+              <Setter TargetName="Thumb" Property="Fill" Value="#FF1A1816"/>
+              <Trigger.EnterActions><BeginStoryboard><Storyboard>
+                <DoubleAnimation Storyboard.TargetName="Thumb" Storyboard.TargetProperty="(UIElement.RenderTransform).(TranslateTransform.X)" To="16" Duration="0:0:0.15"><DoubleAnimation.EasingFunction><CubicEase EasingMode="EaseOut"/></DoubleAnimation.EasingFunction></DoubleAnimation>
+              </Storyboard></BeginStoryboard></Trigger.EnterActions>
+              <Trigger.ExitActions><BeginStoryboard><Storyboard>
+                <DoubleAnimation Storyboard.TargetName="Thumb" Storyboard.TargetProperty="(UIElement.RenderTransform).(TranslateTransform.X)" To="0" Duration="0:0:0.15"><DoubleAnimation.EasingFunction><CubicEase EasingMode="EaseOut"/></DoubleAnimation.EasingFunction></DoubleAnimation>
+              </Storyboard></BeginStoryboard></Trigger.ExitActions>
+            </Trigger>
+          </ControlTemplate.Triggers>
+        </ControlTemplate>
+      </Setter.Value></Setter>
+    </Style>
+    <!-- A slim scrollbar in the theme's colours (the default one is light grey). -->
+    <Style TargetType="ScrollBar">
+      <Setter Property="Width" Value="6"/>
+      <Setter Property="MinWidth" Value="6"/>
+      <Setter Property="Template"><Setter.Value>
+        <ControlTemplate TargetType="ScrollBar">
+          <Track x:Name="PART_Track" IsDirectionReversed="True" Focusable="False">
+            <Track.Thumb>
+              <Thumb>
+                <Thumb.Template><ControlTemplate TargetType="Thumb"><Border x:Name="T" CornerRadius="3" Background="{DynamicResource TextMuted}" Opacity="0.55"/>
+                  <ControlTemplate.Triggers><Trigger Property="IsMouseOver" Value="True"><Setter TargetName="T" Property="Opacity" Value="0.9"/></Trigger></ControlTemplate.Triggers>
+                </ControlTemplate></Thumb.Template>
+              </Thumb>
+            </Track.Thumb>
+          </Track>
+        </ControlTemplate>
+      </Setter.Value></Setter>
+    </Style>
+    <Style x:Key="Section" TargetType="TextBlock">
+      <Setter Property="Foreground" Value="{DynamicResource TextSub}"/>
+      <Setter Property="FontFamily" Value="Segoe UI"/>
+      <Setter Property="FontSize" Value="10.5"/>
+      <Setter Property="FontWeight" Value="SemiBold"/>
+      <Setter Property="Margin" Value="0,14,0,6"/>
+    </Style>
+    <Style x:Key="Help" TargetType="TextBlock">
+      <Setter Property="Foreground" Value="{DynamicResource TextSub}"/>
+      <Setter Property="FontFamily" Value="Segoe UI"/>
+      <Setter Property="FontSize" Value="11.5"/>
+      <Setter Property="Margin" Value="0,4,0,0"/>
+      <Setter Property="TextWrapping" Value="Wrap"/>
+    </Style>
   </Window.Resources>
   <Grid Margin="18">
     <Border CornerRadius="14" Background="{DynamicResource ShellBg}" Margin="1">
       <Border.Effect><DropShadowEffect BlurRadius="24" ShadowDepth="0" Opacity="0.5" Color="Black"/></Border.Effect>
     </Border>
-    <Border CornerRadius="14" Background="{DynamicResource ShellBg}" BorderBrush="{DynamicResource ShellBorder}" BorderThickness="1" Padding="22,18">
+    <Border Width="820" Height="620" CornerRadius="14" Background="{DynamicResource ShellBg}" BorderBrush="{DynamicResource ShellBorder}" BorderThickness="1" Padding="22,18">
       <Grid>
-        <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
+        <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="*"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
         <StackPanel x:Name="Head" Background="Transparent">
-          <TextBlock Text="Choose your style" Foreground="{DynamicResource TextMain}" FontFamily="Segoe UI" FontSize="18" FontWeight="SemiBold"/>
-          <TextBlock Text="Pick how much the window shows. You can change it any time." Foreground="{DynamicResource TextSub}" FontFamily="Segoe UI" FontSize="12" Margin="0,4,0,0"/>
+          <TextBlock Text="Settings" Foreground="{DynamicResource TextMain}" FontFamily="Segoe UI" FontSize="18" FontWeight="SemiBold"/>
+          <TextBlock Text="Changes apply right away." Foreground="{DynamicResource TextSub}" FontFamily="Segoe UI" FontSize="12" Margin="0,4,0,0"/>
         </StackPanel>
         <Grid Grid.Row="1" Margin="0,16,0,0">
-          <Grid.ColumnDefinitions><ColumnDefinition Width="250"/><ColumnDefinition Width="18"/><ColumnDefinition Width="480"/></Grid.ColumnDefinitions>
-          <StackPanel x:Name="Options" KeyboardNavigation.DirectionalNavigation="None"/>
-          <Border Grid.Column="2" CornerRadius="10" Height="460" Background="#FF23262D" BorderBrush="{DynamicResource CardBorder}" BorderThickness="1" ClipToBounds="True">
-            <Grid>
-              <Image x:Name="Preview" Stretch="Uniform" StretchDirection="DownOnly" Margin="2" HorizontalAlignment="Right" VerticalAlignment="Bottom" RenderOptions.BitmapScalingMode="HighQuality"/>
-              <TextBlock x:Name="SizeNote" Foreground="#B3FFFFFF" FontFamily="Segoe UI" FontSize="11" Margin="12,10,0,0" HorizontalAlignment="Left" VerticalAlignment="Top"/>
-              <TextBlock x:Name="NoPreview" Text="Preview not available" Visibility="Collapsed" Foreground="#FFB0B4BC" FontFamily="Segoe UI" FontSize="12" HorizontalAlignment="Center" VerticalAlignment="Center"/>
-            </Grid>
-          </Border>
+          <Grid.ColumnDefinitions><ColumnDefinition Width="372"/><ColumnDefinition Width="20"/><ColumnDefinition Width="384"/></Grid.ColumnDefinitions>
+          <ScrollViewer VerticalScrollBarVisibility="Auto" Padding="0,0,8,0" Focusable="False">
+            <StackPanel Margin="3,3,3,3">
+              <TextBlock Text="STYLE" Style="{StaticResource Section}" Margin="0,0,0,6"/>
+              <UniformGrid x:Name="StyleGrid" Columns="2" KeyboardNavigation.TabNavigation="Once" KeyboardNavigation.DirectionalNavigation="None"/>
+              <TextBlock Text="THEME" Style="{StaticResource Section}" Margin="0,6,0,6"/>
+              <UniformGrid x:Name="ThemeRow" Columns="3" KeyboardNavigation.TabNavigation="Once" KeyboardNavigation.DirectionalNavigation="None"/>
+              <TextBlock Text="SIZE" Style="{StaticResource Section}"/>
+              <Border CornerRadius="8" Background="{DynamicResource Track}" Padding="3"><UniformGrid x:Name="SizeRow" Rows="1" KeyboardNavigation.TabNavigation="Once" KeyboardNavigation.DirectionalNavigation="None"/></Border>
+              <TextBlock Text="Or hold Ctrl and scroll on the window." Style="{StaticResource Help}"/>
+              <TextBlock Text="PERFORMANCE" Style="{StaticResource Section}"/>
+              <Border CornerRadius="8" Background="{DynamicResource Track}" Padding="3"><UniformGrid x:Name="PerfRow" Rows="1" KeyboardNavigation.TabNavigation="Once" KeyboardNavigation.DirectionalNavigation="None"/></Border>
+              <TextBlock x:Name="PerfHelp" Style="{StaticResource Help}"/>
+            </StackPanel>
+          </ScrollViewer>
+          <StackPanel Grid.Column="2">
+            <Border Height="250" Margin="0,10,0,0" CornerRadius="10" Background="{DynamicResource Track}" BorderBrush="{DynamicResource CardBorder}" BorderThickness="1" ClipToBounds="True">
+              <Grid>
+                <Image x:Name="Preview" Stretch="Uniform" StretchDirection="DownOnly" Margin="8" HorizontalAlignment="Center" VerticalAlignment="Center" RenderOptions.BitmapScalingMode="HighQuality"/>
+                <TextBlock x:Name="NoPreview" Text="Preview not available" Visibility="Collapsed" Foreground="{DynamicResource TextSub}" FontFamily="Segoe UI" FontSize="12" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+              </Grid>
+            </Border>
+            <DockPanel Margin="2,8,2,0">
+              <TextBlock x:Name="SizeNote" DockPanel.Dock="Right" Foreground="{DynamicResource TextSub}" FontFamily="Segoe UI" FontSize="11"/>
+              <TextBlock x:Name="Caption" Foreground="{DynamicResource TextSub}" FontFamily="Segoe UI" FontSize="11" FontWeight="SemiBold" TextTrimming="CharacterEllipsis"/>
+            </DockPanel>
+            <TextBlock Text="OPTIONS" Style="{StaticResource Section}"/>
+            <StackPanel x:Name="Toggles"/>
+          </StackPanel>
         </Grid>
         <DockPanel Grid.Row="2" Margin="0,16,0,0" LastChildFill="False">
-          <Button x:Name="UseBtn" DockPanel.Dock="Right" IsDefault="True" Template="{StaticResource PickBtn}" Background="{DynamicResource Accent}" Cursor="Hand" Margin="8,0,0,0" FocusVisualStyle="{x:Null}">
-            <TextBlock Text="Use this style" Foreground="#FF1A1816" FontFamily="Segoe UI" FontSize="13" FontWeight="SemiBold"/>
+          <Button x:Name="ExitBtn" DockPanel.Dock="Left" Template="{StaticResource PickBtn}" Background="Transparent" BorderBrush="{DynamicResource Fail}" BorderThickness="1" Tag="{DynamicResource Fail}" Cursor="Hand" FocusVisualStyle="{StaticResource Ring}"
+                  ToolTip="Close the progress window (it opens again when Claude starts)">
+            <TextBlock Text="Exit Claude Progress" Foreground="{DynamicResource Fail}" FontFamily="Segoe UI" FontSize="13"/>
           </Button>
-          <Button x:Name="LaterBtn" DockPanel.Dock="Right" IsCancel="True" Template="{StaticResource PickBtn}" Background="{DynamicResource Track}" Cursor="Hand" FocusVisualStyle="{x:Null}">
-            <TextBlock x:Name="LaterText" Text="Not now" Foreground="{DynamicResource TextMain}" FontFamily="Segoe UI" FontSize="13"/>
+          <Button x:Name="UseBtn" DockPanel.Dock="Right" IsDefault="True" IsCancel="True" Template="{StaticResource PickBtn}" Background="{DynamicResource Accent}" Tag="#FFFFFFFF" Cursor="Hand" FocusVisualStyle="{StaticResource Ring}">
+            <TextBlock Text="Done" Foreground="#FF1A1816" FontFamily="Segoe UI" FontSize="13" FontWeight="SemiBold" Margin="10,0"/>
           </Button>
-          <TextBlock DockPanel.Dock="Left" VerticalAlignment="Center" Text="Change it later: right-click the window &gt; Choose a style..." Foreground="{DynamicResource TextMuted}" FontFamily="Segoe UI" FontSize="11"/>
+          <Button x:Name="MoveBtn" DockPanel.Dock="Right" Margin="0,0,8,0" Template="{StaticResource PickBtn}" Background="{DynamicResource Track}" Tag="#FFFFFFFF" Cursor="Hand" FocusVisualStyle="{StaticResource Ring}"
+                  ToolTip="Put the window back in the bottom-right corner">
+            <TextBlock Text="Move to corner" Foreground="{DynamicResource TextMain}" FontFamily="Segoe UI" FontSize="13"/>
+          </Button>
         </DockPanel>
       </Grid>
     </Border>
   </Grid>
 </Window>
 '@
-# One style row: a radio button (so Tab, arrows and screen readers work) drawn as a card.
-$pickOptionXaml = @'
-<RadioButton xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
-             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-             GroupName="Style" Margin="0,0,0,8" Cursor="Hand" FocusVisualStyle="{x:Null}">
-  <RadioButton.Template>
-    <ControlTemplate TargetType="RadioButton">
-      <Grid>
-        <Border x:Name="Focus" CornerRadius="11" Margin="-3" BorderThickness="2" BorderBrush="{DynamicResource Accent}" Visibility="Collapsed"/>
-        <Border x:Name="Bd" CornerRadius="9" BorderThickness="1" Background="Transparent" BorderBrush="Transparent">
-          <Grid>
-            <Border x:Name="Hover" CornerRadius="9" Background="{DynamicResource Track}" Opacity="0"/>
-            <DockPanel Margin="12,10">
-              <Grid DockPanel.Dock="Left" Width="16" Height="16" Margin="0,1,10,0" VerticalAlignment="Top">
-                <Ellipse x:Name="Ring" Stroke="{DynamicResource TextMuted}" StrokeThickness="1.5"/>
-                <Ellipse x:Name="Dot" Width="8" Height="8" Fill="{DynamicResource Accent}" Opacity="0"/>
-              </Grid>
-              <ContentPresenter/>
-            </DockPanel>
-          </Grid>
-        </Border>
-      </Grid>
-      <ControlTemplate.Triggers>
-        <Trigger Property="IsMouseOver" Value="True"><Setter TargetName="Hover" Property="Opacity" Value="0.6"/></Trigger>
-        <Trigger Property="IsChecked" Value="True">
-          <Setter TargetName="Bd" Property="Background" Value="{DynamicResource CardBg}"/>
-          <Setter TargetName="Bd" Property="BorderBrush" Value="{DynamicResource Accent}"/>
-          <Setter TargetName="Ring" Property="Stroke" Value="{DynamicResource Accent}"/>
-          <Setter TargetName="Dot" Property="Opacity" Value="1"/>
-          <Setter TargetName="Hover" Property="Opacity" Value="0"/>
-        </Trigger>
-        <Trigger Property="IsKeyboardFocused" Value="True"><Setter TargetName="Focus" Property="Visibility" Value="Visible"/></Trigger>
-      </ControlTemplate.Triggers>
-    </ControlTemplate>
-  </RadioButton.Template>
-  <StackPanel>
-    <DockPanel>
-      <Border x:Name="Now" DockPanel.Dock="Right" CornerRadius="6" Padding="6,1" Background="{DynamicResource Track}" VerticalAlignment="Center" Visibility="Collapsed">
-        <TextBlock Text="In use" Foreground="{DynamicResource TextSub}" FontFamily="Segoe UI" FontSize="10" FontWeight="SemiBold"/>
-      </Border>
-      <TextBlock x:Name="Label" Foreground="{DynamicResource TextMain}" FontFamily="Segoe UI" FontSize="13" FontWeight="SemiBold"/>
-    </DockPanel>
-    <TextBlock x:Name="Desc" Foreground="{DynamicResource TextSub}" FontFamily="Segoe UI" FontSize="11.5" TextWrapping="Wrap" Margin="0,2,0,0"/>
-  </StackPanel>
-</RadioButton>
-'@
 
 if ($SelfTest) {
   $prefs = @{}
-  [void][Windows.Markup.XamlReader]::Parse($pickerXaml); [void][Windows.Markup.XamlReader]::Parse($pickOptionXaml)
+  [void][Windows.Markup.XamlReader]::Parse($pickerXaml)
   foreach ($name in $themes.Keys) { Set-Theme $name $false; $card = New-Card; [void]$ui.Sessions.Children.Add($card.root) }
   Write-Output "Window built OK (themes: $($themes.Keys -join ', '))"
   exit 0
 }
 
 # ---------- preferences ----------
-$prefs = @{ left = $null; top = $null; hideIdle = $false; sound = $true; details = $true; scale = 1.0; theme = 'Normal'; mode = 'Neutral'; mini = $false; chats = $true; progressOnly = $false; styleChosen = $false }
+$prefs = @{ left = $null; top = $null; hideIdle = $false; sound = $true; details = $true; scale = 1.0; theme = 'Normal'; mode = 'Neutral'; mini = $false; chats = $true; progressOnly = $false; styleChosen = $false; pickerSeen = $false; prefsVersion = 0 }
 if (Test-Path $prefsFile) {
   try {
     $p = Get-Content $prefsFile -Raw | ConvertFrom-Json
-    foreach ($k in 'left','top','hideIdle','sound','details','scale','theme','mode','mini','chats','progressOnly','styleChosen') { if ($null -ne $p.$k) { $prefs[$k] = $p.$k } }
+    foreach ($k in 'left','top','hideIdle','sound','details','scale','theme','mode','mini','chats','progressOnly','styleChosen','pickerSeen','prefsVersion') { if ($null -ne $p.$k) { $prefs[$k] = $p.$k } }
   } catch {}
 }
 if ($Theme) { $prefs.theme = $Theme }
@@ -466,6 +618,13 @@ function Save-Prefs {
   if ($Demo -or $Snapshot) { return }   # the demo and previews never change your saved settings
   if ($window.IsLoaded) { $prefs.left = $window.Left; $prefs.top = $window.Top }
   $prefs | ConvertTo-Json | Set-Content -Path $prefsFile -Encoding utf8
+}
+# Settings version 2 (once): "has seen the style picker" (pickerSeen, any close) is kept apart from
+# "chose a style" (styleChosen, only Use or double-click). Older versions set styleChosen on any close.
+if (-not $Demo -and -not $Snapshot -and ([int]($prefs.prefsVersion -as [int]) -lt 2)) {
+  if ($prefs.styleChosen) { $prefs.pickerSeen = $true; $prefs.styleChosen = $false }
+  $prefs.prefsVersion = 2
+  try { Save-Prefs } catch {}
 }
 function Move-ToCorner {
   $wa = [System.Windows.SystemParameters]::WorkArea
@@ -489,6 +648,7 @@ function Set-Scale([double]$v, [bool]$save = $true) {
   $ui.Zoom.ScaleX = $v; $ui.Zoom.ScaleY = $v
   foreach ($k in $sizes.Keys) { $ui[$k].IsChecked = ([math]::Abs($sizes[$k] - $v) -lt 0.01) }
   if ($save) { Save-Prefs }
+  Request-SettingsSync
 }
 foreach ($k in $sizes.Keys) {
   $ui[$k].Tag = $sizes[$k]
@@ -507,12 +667,12 @@ Set-Scale ([double]$prefs.scale) $false
 $ui.MenuDetails.IsChecked = [bool]$prefs.details
 $ui.MenuHideIdle.IsChecked = [bool]$prefs.hideIdle
 $ui.MenuSound.IsChecked = [bool]$prefs.sound
-$ui.MenuDetails.Add_Click({ $prefs.details = $ui.MenuDetails.IsChecked; Save-Prefs })
+$ui.MenuDetails.Add_Click({ $prefs.details = $ui.MenuDetails.IsChecked; Save-Prefs; Request-SettingsSync })
 # Show only progress: every card becomes a slim row (name, % and time left, the coloured timeline).
 # The cards fold or open on the next refresh (see Update-ActiveCard / Update-FinishedCard).
 $ui.MenuProgressOnly.IsChecked = [bool]$prefs.progressOnly
-$ui.MenuProgressOnly.Add_Click({ $prefs.progressOnly = $ui.MenuProgressOnly.IsChecked; Save-Prefs })
-$ui.MenuHideIdle.Add_Click({ $prefs.hideIdle = $ui.MenuHideIdle.IsChecked; Save-Prefs })
+$ui.MenuProgressOnly.Add_Click({ $prefs.progressOnly = $ui.MenuProgressOnly.IsChecked; Save-Prefs; Request-SettingsSync })
+$ui.MenuHideIdle.Add_Click({ $prefs.hideIdle = $ui.MenuHideIdle.IsChecked; Save-Prefs; Request-SettingsSync })
 
 # Regular Claude chats have no hooks: chat-watch.ps1 reads the Claude app's window and reports them.
 $script:chatWatch = $null
@@ -528,8 +688,8 @@ function Set-ChatWatch([bool]$on) {
   }
 }
 $ui.MenuChats.IsChecked = [bool]$prefs.chats
-$ui.MenuChats.Add_Click({ $prefs.chats = $ui.MenuChats.IsChecked; Save-Prefs; Set-ChatWatch $prefs.chats })
-$ui.MenuSound.Add_Click({ $prefs.sound = $ui.MenuSound.IsChecked; Save-Prefs })
+$ui.MenuChats.Add_Click({ $prefs.chats = $ui.MenuChats.IsChecked; Save-Prefs; Set-ChatWatch $prefs.chats; Request-SettingsSync })
+$ui.MenuSound.Add_Click({ $prefs.sound = $ui.MenuSound.IsChecked; Save-Prefs; Request-SettingsSync })
 $ui.MenuReset.Add_Click({ Move-ToCorner; Save-Prefs })
 $ui.MenuExit.Add_Click({ $window.Close() })
 # Minimize: shrink to a slim bar (status, time left, a thin progress line). The window has no
@@ -553,6 +713,7 @@ function Set-Mini([bool]$on, [bool]$save = $true) {
   $ui.Shell.BeginAnimation([System.Windows.FrameworkElement]::HeightProperty, $null)
   $ui.Shell.Width = $newW
   if ($save) { Save-Prefs; try { Update-View } catch {} }
+  Request-SettingsSync
   if ($morph) {
     $ui.Shell.Measure((New-Object System.Windows.Size($newW, [double]::PositiveInfinity)))
     $newH = $ui.Shell.DesiredSize.Height
@@ -565,6 +726,9 @@ function Set-Mini([bool]$on, [bool]$save = $true) {
 # Affordance: a soft highlight under the button while the pointer is over it (150ms ease).
 $ui.MinHit.Add_MouseEnter({ Move-To $ui.MinHover $P_Opacity 1 150; $ui.MinBtn.Foreground = $script:T.text })
 $ui.MinHit.Add_MouseLeave({ Move-To $ui.MinHover $P_Opacity 0 150; $ui.MinBtn.Foreground = $script:T.muted })
+# Gear: opens Settings. The button handles the click itself, so it never starts a drag or the
+# double-click minimize.
+$ui.GearBtn.Add_Click({ try { Show-Settings } catch { Write-UiError $_ } })
 $ui.MinHit.Add_MouseLeftButtonDown({ param($sender, $ev) $ev.Handled = $true; try { Set-Mini (-not $prefs.mini) } catch { Write-UiError $_ } })
 $ui.MenuMini.Add_Click({ try { Set-Mini ([bool]$ui.MenuMini.IsChecked) } catch { Write-UiError $_ } })
 $ui.Shell.Add_MouseLeftButtonDown({
@@ -603,75 +767,258 @@ function Get-StylePreview([string]$name) {
   }
   return $null
 }
-function Select-StyleOption([string]$name, [bool]$focus = $false) {
-  $pk = $script:pick
-  if (-not $pk -or -not $pk.opts.Contains($name)) { return }
-  $o = $pk.opts[$name]
-  if ($focus) { [void]$o.root.Focus() }
-  if (-not $o.root.IsChecked) { $o.root.IsChecked = $true; return }   # its Checked handler comes back here
-  if ($pk.sel -eq $name) { return }
-  $pk.sel = $name
+# ---------- Settings window ----------
+# Every option in one place, drawn as pictures and switches, with a live preview of the window on the
+# right. Changes apply (and are saved) right away; Done or Esc just closes it.
+$perfHelp = @{ Saver = 'Least CPU and memory, no animation.'; Neutral = 'Smooth and light.'; Full = 'Smoothest, 60 fps.' }
+$themeLabels = @{ Normal = 'Normal'; DADA = 'DADA'; Ren = 'REN' }
+function Get-SizeLabel {
+  foreach ($k in $sizes.Keys) { if ([math]::Abs($sizes[$k] - [double]$prefs.scale) -lt 0.01) { return @{ Size75 = 'Small'; Size100 = 'Medium'; Size125 = 'Large'; Size150 = 'Extra large' }[$k] } }
+  return ('{0:0}%' -f ([double]$prefs.scale * 100))
+}
+$thumbCrop = @{ Detailed = 306; Simple = 196 }   # top of the crop (the "Activity" / "This step" label), in window units
+function Get-StyleThumb([string]$name) {
   $img = Get-StylePreview $name
+  if (-not $img -or -not $thumbCrop.ContainsKey($name)) { return $img }
+  $key = "thumb|$name|$($img.GetHashCode())"
+  if (-not $script:pick.cache.ContainsKey($key)) {
+    $k = $img.PixelWidth / $img.Width
+    $y = [int]([math]::Min($img.PixelHeight - 2, $thumbCrop[$name] * $k))
+    $h = [int]([math]::Min($img.PixelHeight - $y, 150 * $k))
+    $x = [int](24 * $k)   # inside the card, so its dark edges do not show as bands
+    $w = [int]($img.PixelWidth - 2 * $x)
+    $c = New-Object System.Windows.Media.Imaging.CroppedBitmap($img, (New-Object System.Windows.Int32Rect($x, $y, $w, $h)))
+    $c.Freeze()
+    $script:pick.cache[$key] = $c
+  }
+  return $script:pick.cache[$key]
+}
+function Update-SizeNote {
+  $pk = $script:pick
+  if (-not $pk) { return }
+  if (-not $pk.img) { $pk.SizeNote.Text = ''; return }
+  $w = $pk.Preview.ActualWidth
+  if ($w -le 0) { return }
+  # Previews are made at Medium size.
+  $sc = [double]$prefs.scale
+  $pk.SizeNote.Text = if ($w + 0.5 -lt $pk.img.Width) { 'Shown smaller to fit' }
+    elseif ([math]::Abs($sc - 1) -lt 0.01) { 'Actual size' }
+    elseif ($sc -gt 1) { 'Your window is larger' } else { 'Your window is smaller' }
+}
+function Update-SettingsPreview {
+  $pk = $script:pick
+  if (-not $pk) { return }
+  $name = Get-StyleName
+  $img = Get-StylePreview $name
+  $changed = -not [object]::ReferenceEquals($pk.img, $img)
+  $pk.img = $img
   $pk.Preview.Source = $img
   $pk.NoPreview.Visibility = if ($img) { 'Collapsed' } else { 'Visible' }
-  # Say whether this is the real size (previews are made at Medium size).
-  $pk.SizeNote.Text = if (-not $img) { '' }
-    elseif ($img.Width -gt 474.5 -or $img.Height -gt 454.5) { 'Shown smaller to fit' }
-    elseif ([math]::Abs([double]$prefs.scale - 1) -lt 0.01) { 'Actual size' } else { 'At Medium size' }
-  if ($img -and $script:perf.anim -and -not $script:reduce) { $pk.Preview.BeginAnimation($P_Opacity, $null); $pk.Preview.Opacity = 0; Move-To $pk.Preview $P_Opacity 1 180 }
+  $pk.Caption.Text = '{0}  ·  {1}  ·  {2}' -f $styles[$name].label, $themeLabels[[string]$script:themeName], (Get-SizeLabel)
+  [System.Windows.Automation.AutomationProperties]::SetName($pk.Preview, ('Preview: ' + $pk.Caption.Text))
+  Update-SizeNote
+  if ($changed -and $img -and $script:perf.anim -and -not $script:reduce) { $pk.Preview.BeginAnimation($P_Opacity, $null); $pk.Preview.Opacity = 0; Move-To $pk.Preview $P_Opacity 1 180 }
 }
-# -first: opened by itself on first start ("Not now"); from the menu it says "Cancel".
-function Show-StylePicker([bool]$first = $false) {
-  if ($script:pick) { try { $script:pick.win.Activate() | Out-Null } catch {}; return }
-  $win = [Windows.Markup.XamlReader]::Parse($pickerXaml)
-  foreach ($k in @($window.Resources.Keys)) { $win.Resources[$k] = $window.Resources[$k] }   # the current theme
-  $pk = @{ win = $win; opts = [ordered]@{}; sel = $null; cache = @{} }
-  foreach ($n in 'Head','Options','Preview','SizeNote','NoPreview','UseBtn','LaterBtn','LaterText') { $pk[$n] = $win.FindName($n) }
-  if (-not $first) { $pk.LaterText.Text = 'Cancel' }
-  $script:pick = $pk
-  $current = Get-StyleName
-  foreach ($name in $styles.Keys) {
-    $el = [Windows.Markup.XamlReader]::Parse($pickOptionXaml)
-    $o = @{ root = $el }
-    foreach ($n in 'Now','Label','Desc') { $o[$n] = $el.FindName($n) }
-    $o.Label.Text = $styles[$name].label; $o.Desc.Text = $styles[$name].desc
-    [System.Windows.Automation.AutomationProperties]::SetName($el, ('{0}. {1}{2}' -f $styles[$name].label, $styles[$name].desc, $(if ($name -eq $current) { ' In use.' } else { '' })))
-    if ($name -eq $current) { $o.Now.Visibility = 'Visible' }
-    $el.Tag = $name
-    # Click (or Space) previews it; double-click uses it.
-    $el.Add_Checked({ param($sender, $ev) try { Select-StyleOption ([string]$sender.Tag) } catch { Write-UiError $_ } })
-    $el.Add_MouseDoubleClick({ param($sender, $ev) try { Set-Style ([string]$sender.Tag) } catch { Write-UiError $_ }; $script:pick.win.Close() })
-    [void]$pk.Options.Children.Add($el)
-    $pk.opts[$name] = $o
+# Puts every control back in step with the settings (after a change here, from the right-click
+# menu, a double-click, Ctrl + scroll, or a theme change, which also swaps this window's colours).
+function Sync-Settings {
+  $pk = $script:pick
+  if (-not $pk) { return }
+  $pk.busy = $true
+  try {
+    foreach ($k in @($window.Resources.Keys)) { $pk.win.Resources[$k] = $window.Resources[$k] }
+    $cur = Get-StyleName
+    foreach ($k in $pk.cards.Keys) { $pk.cards[$k].IsChecked = ($k -eq $cur); $pk.thumbs[$k].Source = Get-StyleThumb $k }
+    foreach ($k in $pk.swatches.Keys) { $pk.swatches[$k].IsChecked = ($k -eq $script:themeName) }
+    foreach ($k in $pk.sizes.Keys) { $pk.sizes[$k].IsChecked = ([math]::Abs($sizes[$k] - [double]$prefs.scale) -lt 0.01) }
+    foreach ($k in $pk.perfs.Keys) { $pk.perfs[$k].IsChecked = ($k -eq [string]$prefs.mode) }
+    $pk.PerfHelp.Text = $perfHelp[[string]$prefs.mode]
+    foreach ($k in $pk.perfs.Keys) { [System.Windows.Automation.AutomationProperties]::SetHelpText($pk.perfs[$k], $perfHelp[$k]) }
+    foreach ($k in $pk.switches.Keys) { $pk.switches[$k].IsChecked = [bool]$prefs[$k] }
+  } finally { $pk.busy = $false }
+  Update-SettingsPreview
+}
+function Request-SettingsSync { if ($script:pick -and -not $script:pick.busy) { try { Sync-Settings } catch { Write-UiError $_ } } }
+# -focus: you opened it yourself (Start menu, gear, menu, installer), so it may take the keyboard.
+#   Opened by itself (often while you type to Claude) it never does, so a stray key can't change anything.
+function Show-Settings([bool]$first = $false, [bool]$focus = $true) {
+  if ($script:pick) {
+    # Already open (maybe quietly): when you asked for it, bring it forward with the keyboard on it.
+    if ($focus) { try { $script:pick.win.Activate() | Out-Null; Set-SettingsFocus } catch {} }
+    return
   }
-  # Enter is "Use this style" and Esc is "Not now"/"Cancel" (IsDefault / IsCancel).
-  $pk.UseBtn.Add_Click({ try { Set-Style $script:pick.sel } catch { Write-UiError $_ }; $script:pick.win.Close() })
-  $pk.LaterBtn.Add_Click({ $script:pick.win.Close() })
+  $win = [Windows.Markup.XamlReader]::Parse($pickerXaml)
+  $pk = @{ win = $win; cache = @{}; busy = $true; img = $null
+           cards = [ordered]@{}; thumbs = @{}; swatches = [ordered]@{}; sizes = [ordered]@{}; perfs = [ordered]@{}; switches = [ordered]@{} }
+  foreach ($n in 'Head','StyleGrid','ThemeRow','SizeRow','PerfRow','PerfHelp','Toggles','Preview','SizeNote','NoPreview','Caption','MoveBtn','ExitBtn','UseBtn') { $pk[$n] = $win.FindName($n) }
+  $script:pick = $pk
+  try {
+  foreach ($k in @($window.Resources.Keys)) { $win.Resources[$k] = $window.Resources[$k] }   # the current theme
+  $white = New-Brush '#FFFFFFFF'; $pk.MoveBtn.Tag = $white; $pk.UseBtn.Tag = $white
+  $res = $win.Resources
+  $addText = {
+    param($text, [double]$size, [string]$brushKey, [string]$weight = 'Normal')
+    $t = New-Object System.Windows.Controls.TextBlock
+    $t.Text = $text; $t.FontFamily = 'Segoe UI'; $t.FontSize = $size; $t.FontWeight = $weight; $t.TextWrapping = 'Wrap'
+    $t.SetResourceReference([System.Windows.Controls.TextBlock]::ForegroundProperty, $brushKey)
+    $t
+  }
+
+  # Style: four cards, each a small picture of the window.
+  foreach ($name in $styles.Keys) {
+    $rb = New-Object System.Windows.Controls.RadioButton
+    $rb.GroupName = 'Style'; $rb.Style = $res['Card']; $rb.Margin = '0,0,8,8'; $rb.Tag = $name
+    $rb.ToolTip = $styles[$name].desc
+    [System.Windows.Automation.AutomationProperties]::SetName($rb, ('Style: {0}. {1}' -f $styles[$name].label, $styles[$name].desc))
+    $sp = New-Object System.Windows.Controls.StackPanel
+    $im = New-Object System.Windows.Controls.Image
+    $crop = $thumbCrop.ContainsKey($name)
+    $im.Stretch = $(if ($crop) { 'UniformToFill' } else { 'Uniform' }); $im.VerticalAlignment = 'Center'; $im.HorizontalAlignment = 'Center'; $im.Margin = $(if ($crop) { '0' } else { '2' })
+    [System.Windows.Media.RenderOptions]::SetBitmapScalingMode($im, 'HighQuality')
+    $frame = New-Object System.Windows.Controls.Border
+    $frame.Height = 48; $frame.ClipToBounds = $true; $frame.CornerRadius = 6; $frame.Child = $im
+    $frame.SetResourceReference([System.Windows.Controls.Border]::BackgroundProperty, 'Track')
+    $lbl = & $addText $styles[$name].label 12.5 'TextMain' 'SemiBold'; $lbl.Margin = '0,6,0,0'
+    [void]$sp.Children.Add($frame); [void]$sp.Children.Add($lbl)
+    $rb.Content = $sp
+    $rb.Add_Checked({ param($sender, $ev) if ($script:pick.busy) { return }; try { Set-Style ([string]$sender.Tag); Request-SettingsSync } catch { Write-UiError $_ } })
+    [void]$pk.StyleGrid.Children.Add($rb)
+    $pk.cards[$name] = $rb; $pk.thumbs[$name] = $im
+  }
+  # Theme: three swatches, each drawn in its own colours.
+  $tiles = [ordered]@{ Normal = @('#FF242220', '#FFD97757'); DADA = @('#FF2A1747', '#FFC38BFF'); Ren = @('#FF102540', '#FF4FB8FF') }
+  foreach ($name in $tiles.Keys) {
+    $rb = New-Object System.Windows.Controls.RadioButton
+    $rb.GroupName = 'Theme'; $rb.Style = $res['Swatch']; $rb.Height = 44; $rb.Margin = $(if ($name -eq 'Ren') { '0' } else { '0,0,8,0' }); $rb.Tag = $name
+    $rb.Background = New-Brush $tiles[$name][0]; $rb.BorderBrush = New-Brush $tiles[$name][1]
+    [System.Windows.Automation.AutomationProperties]::SetName($rb, "Theme: $($themeLabels[$name])")
+    $g = New-Object System.Windows.Controls.StackPanel
+    $g.Orientation = 'Horizontal'; $g.VerticalAlignment = 'Center'; $g.Margin = '12,0,0,0'
+    $dot = New-Object System.Windows.Shapes.Ellipse
+    $dot.Width = 14; $dot.Height = 14; $dot.Fill = New-Brush $tiles[$name][1]; $dot.VerticalAlignment = 'Center'
+    $tn = New-Object System.Windows.Controls.TextBlock
+    $tn.Text = $themeLabels[$name]; $tn.Foreground = New-Brush '#FFFFFFFF'; $tn.FontFamily = 'Segoe UI'; $tn.FontSize = 12; $tn.FontWeight = 'SemiBold'
+    $tn.Margin = '8,0,0,0'; $tn.VerticalAlignment = 'Center'
+    [void]$g.Children.Add($dot); [void]$g.Children.Add($tn)
+    $rb.Content = $g
+    $rb.Add_Checked({ param($sender, $ev) if ($script:pick.busy) { return }; try { Set-Theme ([string]$sender.Tag); Sync-Settings } catch { Write-UiError $_ } })
+    [void]$pk.ThemeRow.Children.Add($rb)
+    $pk.swatches[$name] = $rb
+  }
+  # Size and Performance: segmented choices.
+  $segs = @(
+    @{ row = $pk.SizeRow; map = $pk.sizes; group = 'Size'; items = [ordered]@{ Size75 = 'Small'; Size100 = 'Medium'; Size125 = 'Large'; Size150 = 'Extra large' } },
+    @{ row = $pk.PerfRow; map = $pk.perfs; group = 'Perf'; items = [ordered]@{ Saver = 'Saver'; Neutral = 'Neutral'; Full = 'Full power' } })
+  foreach ($sg in $segs) {
+    foreach ($k in $sg.items.Keys) {
+      $rb = New-Object System.Windows.Controls.RadioButton
+      $rb.GroupName = $sg.group; $rb.Style = $res['Seg']; $rb.Content = $sg.items[$k]; $rb.Tag = $k
+      [System.Windows.Automation.AutomationProperties]::SetName($rb, ('{0}: {1}' -f $(if ($sg.group -eq 'Size') { 'Size' } else { 'Performance' }), $sg.items[$k]))
+      if ($sg.group -eq 'Size') {
+        $rb.Add_Checked({ param($sender, $ev) if ($script:pick.busy) { return }; try { Set-Scale $sizes[[string]$sender.Tag]; Request-SettingsSync } catch { Write-UiError $_ } })
+      } else {
+        $rb.Add_Checked({ param($sender, $ev) if ($script:pick.busy) { return }; try { Set-Mode ([string]$sender.Tag); Request-SettingsSync } catch { Write-UiError $_ } })
+      }
+      [void]$sg.row.Children.Add($rb)
+      $sg.map[$k] = $rb
+    }
+  }
+  # Options: on/off switches, kept in step with the right-click menu.
+  $opts = [ordered]@{
+    chats    = @('Show regular Claude chats', 'Also show Claude desktop app chats.', 'MenuChats')
+    hideIdle = @('Hide when Claude is idle', 'The window comes back when Claude starts working.', 'MenuHideIdle')
+    sound    = @('Sound when a long job finishes', 'A short chime after jobs longer than 30 seconds.', 'MenuSound') }
+  foreach ($k in $opts.Keys) {
+    $cb = New-Object System.Windows.Controls.CheckBox
+    $cb.Style = $res['Switch']; $cb.Tag = $k
+    [System.Windows.Automation.AutomationProperties]::SetName($cb, $opts[$k][0])
+    [System.Windows.Automation.AutomationProperties]::SetHelpText($cb, $opts[$k][1])
+    $sp = New-Object System.Windows.Controls.StackPanel
+    [void]$sp.Children.Add((& $addText $opts[$k][0] 13 'TextMain'))
+    $h = & $addText $opts[$k][1] 11.5 'TextSub'; $h.Margin = '0,2,0,0'; [void]$sp.Children.Add($h)
+    $cb.Content = $sp
+    $cb.Add_Click({ param($sender, $ev)
+      try {
+        $key = [string]$sender.Tag; $on = [bool]$sender.IsChecked
+        $prefs[$key] = $on
+        $ui[@{ chats = 'MenuChats'; hideIdle = 'MenuHideIdle'; sound = 'MenuSound' }[$key]].IsChecked = $on
+        Save-Prefs
+        if ($key -eq 'chats') { Set-ChatWatch $on }
+      } catch { Write-UiError $_ } })
+    [void]$pk.Toggles.Children.Add($cb)
+    $pk.switches[$k] = $cb
+  }
+  foreach ($grp in $pk.StyleGrid, $pk.ThemeRow, $pk.SizeRow, $pk.PerfRow) {
+    $grp.Add_PreviewKeyDown({ param($sender, $ev)
+      $k = [string]$ev.Key
+      if ('Left','Right','Up','Down' -notcontains $k) { return }
+      $items = @($sender.Children)
+      $i = [array]::IndexOf($items, [System.Windows.Input.Keyboard]::FocusedElement)
+      if ($i -lt 0) { return }
+      $cols = if ($sender.Columns -gt 0) { $sender.Columns } else { $items.Count }
+      $step = switch ($k) { 'Left' { -1 } 'Right' { 1 } 'Up' { -$cols } 'Down' { $cols } }
+      if ($cols -eq $items.Count -and ($k -eq 'Up' -or $k -eq 'Down')) { $step = [math]::Sign($step) }
+      $j = ($i + $step + $items.Count) % $items.Count
+      $items[$j].IsChecked = $true; [void]$items[$j].Focus()
+      $ev.Handled = $true })
+    $grp.Add_GotKeyboardFocus({ param($sender, $ev)
+      # Tabbing in lands on the chosen item, not the first one.
+      $old = $ev.OldFocus -as [System.Windows.DependencyObject]
+      if ($old -and $sender.IsAncestorOf($old)) { return }
+      $sel = @($sender.Children | Where-Object { $_.IsChecked }) | Select-Object -First 1
+      if ($sel -and -not [object]::ReferenceEquals($sel, $ev.NewFocus)) { [void]$sel.Focus() } })
+  }
+  $pk.MoveBtn.Add_Click({ try { Move-ToCorner; Save-Prefs } catch { Write-UiError $_ } })
+  $pk.ExitBtn.Add_Click({ $window.Close() })
+  $pk.UseBtn.Add_Click({ $script:pick.win.Close() })
   $pk.Head.Add_MouseLeftButtonDown({ try { $script:pick.win.DragMove() } catch {} })
-  # Up and down move through the styles from anywhere in the picker.
-  $win.Add_PreviewKeyDown({ param($sender, $ev)
-    $k = [string]$ev.Key
-    if ($k -ne 'Up' -and $k -ne 'Down') { return }
-    $keys = @($script:pick.opts.Keys); $i = [array]::IndexOf($keys, $script:pick.sel)
-    $j = if ($i -lt 0) { 0 } elseif ($k -eq 'Down') { [math]::Min($keys.Count - 1, $i + 1) } else { [math]::Max(0, $i - 1) }
-    Select-StyleOption $keys[$j] $true
-    $ev.Handled = $true })
-  # However it closes, it counts as seen, so it only opens by itself once.
+  $pk.Preview.Add_SizeChanged({ try { Update-SizeNote } catch {} })
+  # However it closes, it counts as seen, so it only opens by itself once. Closing restarts the
+  # idle grace, so a hidden-while-idle window stays a moment to show the new look.
   $win.Add_Closed({
-    $script:pick = $null   # first, so the menu can always open it again
-    if (-not $prefs.styleChosen) { $prefs.styleChosen = $true; try { Save-Prefs } catch { Write-UiError $_ } }
+    $script:pick = $null   # first, so it can always be opened again
+    $script:startedAt = [double][DateTimeOffset]::UtcNow.ToUnixTimeMilliseconds()
+    if (-not $prefs.pickerSeen) { $prefs.pickerSeen = $true; try { Save-Prefs } catch { Write-UiError $_ } }
   })
-  Select-StyleOption $current
-  if ($first) {
-    # Opened by itself (often while you are typing to Claude): it never takes the keyboard, so a
-    # stray Enter can't choose for you. Click into it to use the keys.
+  Sync-Settings
+  if (-not $focus) {
     $win.ShowActivated = $false
     $win.Show()
   } else {
-    $win.Add_ContentRendered({ try { Select-StyleOption $script:pick.sel $true } catch {} })
+    $win.Add_ContentRendered({ try { Set-SettingsFocus } catch {} })
     $win.Show(); [void]$win.Activate()
   }
-}$ui.MenuStyle.Add_Click({ try { Show-StylePicker } catch { Write-UiError $_ } })
+  } catch {
+    # Building it failed (for example a damaged preview picture): forget it, so it can be opened again
+    # and the window can still hide while idle.
+    $script:pick = $null
+    try { $win.Close() } catch {}
+    throw
+  }
+}
+# Keyboard focus on the selected style card (Tab moves on through the rest).
+function Set-SettingsFocus {
+  $pk = $script:pick
+  if (-not $pk) { return }
+  $c = $pk.cards[(Get-StyleName)]
+  if ($c) { [void]$c.Focus() }
+}
+$ui.MenuStyle.Add_Click({ try { Show-Settings } catch { Write-UiError $_ } })
+# A background install (inside the Claude app) leaves an "open-picker" note holding the time it was
+# written. A fresh note opens the picker quietly; the note is always deleted, and one older than
+# 2 minutes is ignored, so a leftover can never open it later. Checked at start and on every refresh
+# (a copy may already be running when the note appears). Returns $true if it opened the picker.
+function Use-PickerNote([bool]$open) {
+  if ($Demo -or $Snapshot) { return $false }
+  $note = Join-Path $root 'open-picker'
+  if (-not (Test-Path -LiteralPath $note)) { return $false }
+  $at = 0
+  try { $at = ([IO.File]::ReadAllText($note)).Trim() -as [double] } catch {}
+  Remove-Item -LiteralPath $note -Force -ErrorAction SilentlyContinue
+  $fresh = $at -and ([double][DateTimeOffset]::UtcNow.ToUnixTimeMilliseconds() - $at) -lt 120000
+  if ($open -and $fresh) { Show-Settings $true $false; return $true }
+  return $false
+}
 # Keep the window on screen as cards come and go.
 $window.Add_SizeChanged({
   $wa = [System.Windows.SystemParameters]::WorkArea
@@ -1619,7 +1966,8 @@ function Update-View {
     $ui.Legend.Visibility = if ($shown.Count -gt 0 -and $prefs.details) { 'Visible' } else { 'Collapsed' }
   }
   $justOpened = ($now - $script:startedAt) -lt $GRACE
-  Set-WindowShown (-not ($shown.Count -eq 0 -and $prefs.hideIdle -and -not $Demo -and -not $justOpened)) $now
+  # (Never hidden while the style picker is open, so you can see the style you pick.)
+  Set-WindowShown (-not ($shown.Count -eq 0 -and $prefs.hideIdle -and -not $Demo -and -not $justOpened -and -not $script:pick)) $now
   if ($active.Count -eq 0) { $script:est = @{} }
 }
 
@@ -1718,6 +2066,12 @@ $timer.Interval = [TimeSpan]::FromMilliseconds(500)
 $script:lastError = $null
 $timer.Add_Tick({
   # Opened again while already running: show the window (for the usual few seconds if Claude is idle).
+  # Start menu > Claude Progress while running: show the window and open Settings in front.
+  if ($script:styleSignal -and $script:styleSignal.WaitOne(0)) {
+    $script:startedAt = [double][DateTimeOffset]::UtcNow.ToUnixTimeMilliseconds()
+    try { Show-Settings $false $true } catch { Write-UiError $_ }
+  }
+  try { [void](Use-PickerNote $true) } catch { Write-UiError $_ }
   if ($script:showSignal -and $script:showSignal.WaitOne(0)) {
     $script:startedAt = [double][DateTimeOffset]::UtcNow.ToUnixTimeMilliseconds()
     try { $window.Activate() | Out-Null } catch {}
@@ -1750,6 +2104,7 @@ function Set-Mode([string]$name, [bool]$save = $true) {
   foreach ($c in $script:cards.Values) { if ($c.pulsing) { $c.pulsing = $false } }
   if ($name -eq 'Saver') { try { Invoke-Trim } catch {} }
   if ($save) { $prefs.mode = $name; Save-Prefs }
+  Request-SettingsSync
 }
 $ui.ModeSaver.Add_Click({ Set-Mode 'Saver' })
 $ui.ModeNeutral.Add_Click({ Set-Mode 'Neutral' })
@@ -1791,7 +2146,10 @@ $window.Add_Loaded({
   $timer.Start()
   try { Set-ChatWatch ([bool]$prefs.chats) } catch { Write-UiError $_ }
   # First start: let people pick a style (once; it is always under right-click > Choose a style).
-  if (-not $Demo -and -not $prefs.styleChosen) { try { Show-StylePicker $true } catch { Write-UiError $_ } }
+  try {
+    if ($Settings) { [void](Use-PickerNote $false); Show-Settings $false $true }
+    elseif (-not $Demo -and -not (Use-PickerNote $true) -and -not $prefs.pickerSeen) { Show-Settings $true $false }
+  } catch { Write-UiError $_ }
 })
 # On Exit, let go of the single-copy lock at once, so reopening straight away works.
 $window.Add_Closed({
