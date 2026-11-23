@@ -9,7 +9,7 @@ $repo = Split-Path $PSScriptRoot -Parent
 Set-Location $repo
 
 # The ZIP is built from the commit, so uncommitted changes to the app would silently not ship.
-$appFiles = 'install.ps1','uninstall.ps1','hook.js','ClaudeProgress.ps1','chat-watch.ps1','settings-hooks.js','demo.js','Install.cmd','Uninstall.cmd','VERSION'
+$appFiles = 'install.ps1','uninstall.ps1','hook.js','ClaudeProgress.ps1','chat-watch.ps1','settings-hooks.js','demo.js','Install.cmd','Uninstall.cmd','VERSION','previews'
 if ($Ref -eq 'HEAD' -and (git status --porcelain -- $appFiles)) { throw 'App files have uncommitted changes. Commit them first: the ZIP is built from the commit.' }
 if (git status --porcelain --untracked-files=no) { Write-Host 'Note: other uncommitted changes are not in the ZIP (it is built from the commit).' -ForegroundColor Yellow }
 if ($Ref -like '-*') { throw "Bad ref '$Ref'" }

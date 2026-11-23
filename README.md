@@ -106,6 +106,7 @@ Right-click the window for everything. Drag it anywhere; it remembers its place 
 
 | Menu | Choices |
 | --- | --- |
+| **Choose a style...** | pick Detailed, Simple, Show only progress or Minimized bar, with a preview of each (also shown once on first start) |
 | **Minimize** | slim bar mode (also the **–** button, or double-click the window) |
 | **Theme** | Normal · DADA · REN |
 | **Performance** | Saver · Neutral · Full power |

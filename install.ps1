@@ -79,6 +79,12 @@ Remove-Item (Join-Path $env:LOCALAPPDATA 'ClaudeProgress') -Recurse -Force -Erro
 foreach ($f in 'hook.js','demo.js','settings-hooks.js','ClaudeProgress.ps1','chat-watch.ps1','uninstall.ps1','Uninstall.cmd','VERSION') {
   Copy-Item (Join-Path $src $f) (Join-Path $dest $f) -Force
 }
+# The style picker's preview pictures (optional: the picker says so if they are missing).
+$prev = Join-Path $src 'previews'
+if (Test-Path $prev) {
+  New-Item -ItemType Directory -Force -Path (Join-Path $dest 'previews') | Out-Null
+  Copy-Item (Join-Path $prev 'style-*.png') (Join-Path $dest 'previews') -Force
+}
 
 # 2. Check the window can be built
 $test = & powershell.exe -NoProfile -STA -ExecutionPolicy Bypass -File (Join-Path $dest 'ClaudeProgress.ps1') -SelfTest
