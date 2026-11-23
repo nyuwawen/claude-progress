@@ -80,7 +80,7 @@ Each helper gets a role from its name and its task, with its own icon and wordin
 
 ## 🎨 Themes
 
-Right-click the window → **Theme**.
+Open **Settings** (the gear, or the Start menu) → **Theme**.
 
 <table>
   <tr>
@@ -102,7 +102,7 @@ Right-click the window → **Theme**.
 
 ## ⚙️ Options
 
-Open **Settings** for everything: start **Claude Progress** from the Start menu, or click the **gear** (⚙ next to minimize). Style (with a live preview), theme, size, performance and options are all in one window, and changes apply right away. Right-click still has a quick menu. Drag the window anywhere; it remembers its place and your settings.
+Open **Settings** for everything: start **Claude Progress** from the Start menu, or click the **gear** (⚙ next to minimize). Style (with a live preview), theme, size, performance and options are all in one window, and changes apply right away. Drag the window anywhere; it remembers its place and your settings.
 
 | Menu | Choices |
 | --- | --- |
@@ -160,7 +160,7 @@ The window (`ClaudeProgress.ps1`) is WPF running in Windows PowerShell 5.1, so t
 <summary><b>What the installer changes</b></summary>
 
 - Copies the app to `%USERPROFILE%\.claude-progress\app`
-- Adds eight hooks to `~/.claude/settings.json`. A backup is saved first as `settings.json.before-claude-progress.bak`, and your other settings and hooks are kept. Running it twice doesn't duplicate anything.
+- Adds nine hooks to `~/.claude/settings.json`. A backup is saved first as `settings.json.before-claude-progress.bak`, and your other settings and hooks are kept. Running it twice doesn't duplicate anything.
 - Adds Start menu shortcuts (**Claude Progress**, which also opens Settings, **Claude Progress Demo**, **Uninstall Claude Progress**)
 - Starts the app with Windows, and adds a **Claude Progress** task in Task Scheduler that the hook uses to reopen the window whenever a Claude session starts and it isn't running
 
@@ -195,7 +195,7 @@ That's the first time it has timed that kind of step. After one run it has a tim
 No. The hook takes about 50 ms per step, never prints anything and always exits successfully.
 
 **Does it work with regular Claude chats, not just Claude Code?**
-Yes, in the Claude desktop app. Chats show their name, current step and time left. They don't show file names or commands, because regular chat doesn't share those. Turn it off with right-click → **Show regular Claude chats**.
+Yes, in the Claude desktop app. Chats show their name, current step and time left. They don't show file names or commands, because regular chat doesn't share those. Turn it off in **Settings** (the gear) → **Show regular Claude chats**.
 **Does it work with several Claude chats at once?**
 Yes. Each working chat gets its own card.
 

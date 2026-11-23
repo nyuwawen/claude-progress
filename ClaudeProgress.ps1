@@ -12,7 +12,7 @@
 
   Estimates never stall at 99%: when a step runs past its estimate, the estimate is
   raised (the bar drops back), the extra time is added to that step, and a notice says so.
-  Right-click the window for size, theme and other options; Ctrl + scroll resizes it.
+  Click the gear (or start Claude Progress from the Start menu) for Settings; Ctrl + scroll resizes it.
 #>
 param([switch]$Demo, [switch]$SelfTest, [string]$Theme, [string]$Snapshot, [string]$Mode, [switch]$StylePreviews, [switch]$Settings, [switch]$ChooseStyle)
 # -Settings: open the Settings window (Start menu > Claude Progress), in the running copy if there is
@@ -34,7 +34,7 @@ Add-Type -AssemblyName PresentationFramework, PresentationCore, WindowsBase
 # Lets the window hand unused memory back to Windows (see Performance modes).
 Add-Type -Namespace ClaudeProgress -Name Mem -MemberDefinition '[DllImport("psapi.dll")] public static extern bool EmptyWorkingSet(System.IntPtr hProcess);'
 
-# Performance modes (right-click > Performance).
+# Performance modes (Settings > Performance).
 #   fps: animation frame rate   refresh: how often state.json is read (ms)
 #   anim: smooth motion on/off  glow: outer glow on/off   trim: free unused memory every N seconds (0 = never)
 $modes = [ordered]@{
@@ -89,6 +89,7 @@ $themes = [ordered]@{
       card = '#14FFFFFF'; cardBorder = '#1FFFFFFF'; track = '#2EFFFFFF'; divider = '#22FFFFFF'
       text = '#FFFFFF'; sub = '#C8C3BC'; muted = '#8C867E'
       accent = '#D97757'; done = '#7FB77E'; noticeBg = '#33E5B94E'; noticeText = '#F2D58A'; fail = '#E06C6C'
+      wait = '#E5B94E'; waitBg = '#40E5B94E'; failBg = '#2EE06C6C'; failText = '#F59B9B'
     }
     cats = @{ read = '#6FB3D2'; edit = '#7FB77E'; run = '#E5B94E'; render = '#D97757'; web = '#B48EDB'; agent = '#E58FB4'; other = '#9AA0A6'; think = '#756F66' }
   }
@@ -99,6 +100,7 @@ $themes = [ordered]@{
       card = '#1AC9A2FF'; cardBorder = '#38C9A2FF'; track = '#2ED9C2FF'; divider = '#33C9A2FF'
       text = '#FFFFFF'; sub = '#E0D2FA'; muted = '#A592C9'
       accent = '#C38BFF'; done = '#9BE8C0'; noticeBg = '#33FF8FD8'; noticeText = '#FFC9EE'; fail = '#FF7A9C'
+      wait = '#FFD37A'; waitBg = '#40FFD37A'; failBg = '#2EFF7A9C'; failText = '#FF9AB4'
     }
     cats = @{ read = '#8EC5FF'; edit = '#9BE8C0'; run = '#FFD37A'; render = '#FF8FD8'; web = '#C9A2FF'; agent = '#FF9E7A'; other = '#B8B0D4'; think = '#7A68A8' }
   }
@@ -109,6 +111,7 @@ $themes = [ordered]@{
       card = '#1A5CBDFF'; cardBorder = '#385CBDFF'; track = '#2EA8D8FF'; divider = '#335CBDFF'
       text = '#FFFFFF'; sub = '#CCE0F5'; muted = '#7FA0C4'
       accent = '#4FB8FF'; done = '#7FE3C4'; noticeBg = '#3348C6FF'; noticeText = '#BFE8FF'; fail = '#FF8A8A'
+      wait = '#FFD580'; waitBg = '#40FFD580'; failBg = '#2EFF8A8A'; failText = '#FF8A8A'
     }
     cats = @{ read = '#7FD8FF'; edit = '#7FE3C4'; run = '#FFD580'; render = '#FF9F7A'; web = '#A9B8FF'; agent = '#F0A6D8'; other = '#A8B8CC'; think = '#5578A8' }
   }
@@ -186,7 +189,7 @@ $catNames = [ordered]@{ read = 'Reading'; edit = 'Editing'; run = 'Running'; ren
           </Border>
           <!-- Settings: opens the Settings window. A real button, so Narrator and Tab find it. -->
           <Button x:Name="GearBtn" DockPanel.Dock="Right" Width="24" Height="24" Margin="4,-4,0,-4" VerticalAlignment="Center" Cursor="Hand"
-                  ToolTip="Settings" AutomationProperties.Name="Settings" TabIndex="0">
+                  ToolTip="Settings (also in Start menu &gt; Claude Progress)" AutomationProperties.Name="Settings" TabIndex="0">
             <!-- The ring shows for keyboard focus only (WPF hides focus visuals after a mouse click). -->
             <Button.FocusVisualStyle>
               <Style>
@@ -371,7 +374,7 @@ function New-Card {
   return $c
 }
 
-# ---------- style picker (first start, and right-click > Choose a style) ----------
+# ---------- styles (Settings > Style) ----------
 # Each style is a mix of the existing options. $null leaves that option as it is.
 $styles = [ordered]@{
   Detailed = @{ label = 'Detailed'; desc = 'Every chat with its steps, timings and recent activity.'; details = $true; progressOnly = $false; mini = $false }
@@ -478,7 +481,7 @@ $pickerXaml = @'
           <Grid Background="Transparent" MinHeight="44">
             <Grid.ColumnDefinitions><ColumnDefinition/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
             <ContentPresenter VerticalAlignment="Center"/>
-            <Grid Grid.Column="1" Width="34" Height="18" Margin="12,0,0,0" VerticalAlignment="Center">
+            <Grid Grid.Column="1" Width="34" Height="18" Margin="12,0,4,0" VerticalAlignment="Center">
               <Border x:Name="Track" CornerRadius="9" Background="{DynamicResource Track}" BorderBrush="{DynamicResource TextSub}" BorderThickness="1"/>
               <Ellipse x:Name="Thumb" Width="12" Height="12" Margin="3,0,0,0" HorizontalAlignment="Left" Fill="{DynamicResource TextSub}">
                 <Ellipse.RenderTransform><TranslateTransform X="0"/></Ellipse.RenderTransform>
@@ -546,7 +549,7 @@ $pickerXaml = @'
           <TextBlock Text="Changes apply right away." Foreground="{DynamicResource TextSub}" FontFamily="Segoe UI" FontSize="12" Margin="0,4,0,0"/>
         </StackPanel>
         <Grid Grid.Row="1" Margin="0,16,0,0">
-          <Grid.ColumnDefinitions><ColumnDefinition Width="372"/><ColumnDefinition Width="20"/><ColumnDefinition Width="384"/></Grid.ColumnDefinitions>
+          <Grid.ColumnDefinitions><ColumnDefinition Width="372"/><ColumnDefinition Width="20"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
           <ScrollViewer VerticalScrollBarVisibility="Auto" Padding="0,0,8,0" Focusable="False">
             <StackPanel Margin="3,3,3,3">
               <TextBlock Text="STYLE" Style="{StaticResource Section}" Margin="0,0,0,6"/>
@@ -729,6 +732,9 @@ $ui.MinHit.Add_MouseLeave({ Move-To $ui.MinHover $P_Opacity 0 150; $ui.MinBtn.Fo
 # Gear: opens Settings. The button handles the click itself, so it never starts a drag or the
 # double-click minimize.
 $ui.GearBtn.Add_Click({ try { Show-Settings } catch { Write-UiError $_ } })
+# Right-click does nothing: the gear is the one way into Settings (plus the Start menu). The old quick
+# menu stays defined (its items keep the settings in step) but never opens.
+$ui.Shell.Add_ContextMenuOpening({ param($sender, $ev) $ev.Handled = $true })
 $ui.MinHit.Add_MouseLeftButtonDown({ param($sender, $ev) $ev.Handled = $true; try { Set-Mini (-not $prefs.mini) } catch { Write-UiError $_ } })
 $ui.MenuMini.Add_Click({ try { Set-Mini ([bool]$ui.MenuMini.IsChecked) } catch { Write-UiError $_ } })
 $ui.Shell.Add_MouseLeftButtonDown({
@@ -819,7 +825,7 @@ function Update-SettingsPreview {
   Update-SizeNote
   if ($changed -and $img -and $script:perf.anim -and -not $script:reduce) { $pk.Preview.BeginAnimation($P_Opacity, $null); $pk.Preview.Opacity = 0; Move-To $pk.Preview $P_Opacity 1 180 }
 }
-# Puts every control back in step with the settings (after a change here, from the right-click
+# Puts every control back in step with the settings (after a change here, from the old menu items
 # menu, a double-click, Ctrl + scroll, or a theme change, which also swaps this window's colours).
 function Sync-Settings {
   $pk = $script:pick
@@ -923,7 +929,7 @@ function Show-Settings([bool]$first = $false, [bool]$focus = $true) {
       $sg.map[$k] = $rb
     }
   }
-  # Options: on/off switches, kept in step with the right-click menu.
+  # Options: on/off switches, kept in step with the (hidden) menu items.
   $opts = [ordered]@{
     chats    = @('Show regular Claude chats', 'Also show Claude desktop app chats.', 'MenuChats')
     hideIdle = @('Hide when Claude is idle', 'The window comes back when Claude starts working.', 'MenuHideIdle')
@@ -1033,6 +1039,14 @@ function Format-Ms([double]$ms) {
   return ('{0}s' -f $t)
 }
 function Get-List($x) { if ($null -eq $x) { return @() } return @($x) }
+function Get-Finite($v) { $d = $v -as [double]; if ($null -ne $d -and -not [double]::IsNaN($d) -and -not [double]::IsInfinity($d)) { return $d } return $null }
+# When a working chat is waiting for your OK: the time it started waiting, or $null.
+function Get-WaitSince($s, [double]$now) {
+  if (-not $s -or -not $s.needsYou -or $s.needsYou -is [string] -or $s.needsYou -is [ValueType]) { return $null }
+  $since = Get-Finite $s.needsYou.since; $t0 = Get-Finite $s.turnStartedAt
+  if ($null -eq $since -or $null -eq $t0 -or $since -lt $t0 -or $since -gt $now + 5000) { return $null }
+  return $since
+}
 
 # A readable name for a chat: its folder, plus the start of the message that started this job.
 function Get-ChatName($s) {
@@ -1358,11 +1372,11 @@ function Get-Estimate($card, [string]$id, [double]$spent, $base, [string]$label,
 # Builds timeline segments and activity rows for one turn.
 function Get-Timeline($s, [double]$startAt, [double]$endAt, [double]$now, [bool]$running) {
   $items = @()
-  foreach ($l in (Get-List $s.log)) { $items += [pscustomobject]@{ start = [double]$l.startedAt; end = [double]$l.endedAt; cat = $l.cat; label = $l.label; detail = $l.detail; ok = $l.ok; live = $false; id = ''; base = $null; agent = [bool]$l.agent } }
+  foreach ($l in (Get-List $s.log)) { $items += [pscustomobject]@{ start = [double]$l.startedAt; end = [double]$l.endedAt; cat = $l.cat; label = $l.label; detail = $l.detail; ok = $l.ok; live = $false; id = ''; base = $null; agent = [bool]$l.agent; paused = [math]::Max(0.0, [double](Get-Finite $l.pausedMs)) } }
   if ($running -and $s.steps) {
     foreach ($p in $s.steps.PSObject.Properties) {
       $st = $p.Value
-      $items += [pscustomobject]@{ start = [double]$st.startedAt; end = $now; cat = $st.cat; label = $st.label; detail = $st.detail; ok = $true; live = $true; id = $p.Name; base = $st.estimateMs; agent = [bool]$st.agent }
+      $items += [pscustomobject]@{ start = [double]$st.startedAt; end = $now; cat = $st.cat; label = $st.label; detail = $st.detail; ok = $true; live = $true; id = $p.Name; base = $st.estimateMs; agent = [bool]$st.agent; paused = [math]::Max(0.0, [double](Get-Finite $st.pausedMs)); helper = [bool]($st.by -or $st.agent) }
     }
   }
   $items = @($items | Sort-Object start)
@@ -1443,7 +1457,11 @@ function Draw-Activity($card, $rows, [int]$max) {
   $show = @($rows | Sort-Object start -Descending | Select-Object -First $max)
   $durText = {
     param($row)
+    # A step's time leaves out any wait for your OK (finished, and the one going on now).
     $spent = $row.end - $row.start
+    # (A background helper keeps working while Claude waits, so its time keeps running.)
+    if ($row.PSObject.Properties['paused']) { $spent -= [double]$row.paused; if ($row.live -and -not $row.helper) { $spent -= [double]$card.waitNow } }
+    $spent = [math]::Max(0.0, $spent)
     if ($row.live -and $row.id -and $script:est.ContainsKey($row.id)) { '{0} / ~{1}' -f (Format-Ms $spent), (Format-Ms $script:est[$row.id].value) } else { Format-Ms $spent }
   }
   $sig = $script:themeName + '|' + (($show | ForEach-Object { '{0}/{1}/{2}/{3}/{4}/{5}' -f $_.start, $_.cat, $_.label, $_.detail, $_.ok, $_.live }) -join ';')
@@ -1625,7 +1643,14 @@ function Update-ActiveCard($card, $sid, $s, [double]$now, [int]$maxRows) {
   $card.finSeen = $null
   $card.Clock.SetResourceReference([System.Windows.Controls.TextBlock]::ForegroundProperty, 'TextMain')
   $t0 = [double]$s.turnStartedAt
-  $spent = $now - $t0
+  # "Needs you": Claude is waiting for your OK. The job's clock stops at that moment, and time spent
+  # waiting (now or earlier in this job) never counts as work, so the estimate doesn't run on.
+  $nySince = Get-WaitSince $s $now
+  $tnow = if ($nySince) { [math]::Min($now, $nySince) } else { $now }
+  $waitNow = if ($nySince) { [math]::Max(0.0, $now - $nySince) } else { 0.0 }
+  $paused = [math]::Max(0.0, [double](Get-Finite $s.pausedMs))
+  $spent = [math]::Max(0.0, $tnow - $t0 - $paused)
+  $card.waitNow = $waitNow
   $tl = Get-Timeline $s $t0 $now $now $true
   $live = @($tl.items | Where-Object { $_.live } | Sort-Object start -Descending)
 
@@ -1636,7 +1661,7 @@ function Update-ActiveCard($card, $sid, $s, [double]$now, [int]$maxRows) {
   $stepRemaining = 0
   if ($live.Count -gt 0) {
     $st = $live[0]
-    $stepSpent = $now - $st.start
+    $stepSpent = [math]::Max(0.0, $(if ($st.helper) { $now } else { $tnow }) - $st.start - $st.paused)   # helpers keep working while Claude waits
     $card.NowLabel.Text = if ($live.Count -gt 1) { "$($st.label)   (+$($live.Count - 1) more in parallel)" } else { $st.label }
     $card.NowLabel.Foreground = Get-CatBrush $st.cat
     $card.NowDetail.Text = $st.detail
@@ -1675,17 +1700,18 @@ function Update-ActiveCard($card, $sid, $s, [double]$now, [int]$maxRows) {
     $script:est[$turnKey].value = $turnEst
   }
   if ($null -eq $turnEst) {
-    Draw-Segments $card $tl.segs $t0 ([math]::Max(($spent + $LEAD) * 1.15, 1000)) $now
+    Draw-Segments $card $tl.segs $t0 ([math]::Max(($now - $t0 + $LEAD) * 1.15, 1000)) $now
     $card.lastScale = 0
     $card.jobPct = $null; $card.jobPctAhead = $null; $card.jobLeft = $null; $card.jobSpent = $spent
     $card.TurnPct.Text = ''
     $card.TurnText.Text = Join-Phrases ('{0} elapsed  ·  {1} steps done  ·  no estimate yet, it learns from each job' -f (Format-Ms $spent), (Get-List $s.log).Count)
   } else {
     $bump = ($card.lastScale -gt 0 -and $turnEst -gt $card.lastScale * 1.02)
-    Draw-Segments $card $tl.segs $t0 $turnEst $now $bump
+    Draw-Segments $card $tl.segs $t0 ($turnEst + $paused + $waitNow) $now $bump
     $card.lastScale = $turnEst
     $pct = [math]::Min(99, $spent / $turnEst * 100)
-    $card.jobPct = $pct; $card.jobPctAhead = [math]::Min(99, ($spent + $LEAD) / $turnEst * 100); $card.jobLeft = $turnEst - $spent; $card.jobSpent = $spent
+    $card.jobPct = $pct; $card.jobLeft = $turnEst - $spent; $card.jobSpent = $spent
+    $card.jobPctAhead = if ($nySince) { $pct } else { [math]::Min(99, ($spent + $LEAD) / $turnEst * 100) }   # no easing ahead while paused
     $card.TurnPct.Text = ('{0}%' -f [math]::Floor($pct))
     $te = $script:est[$turnKey]
     $note = if ($te.bumps -gt 0 -or $turnEst -gt $te.original + 1000) { ('  ·  re-estimated (usually {0})' -f (Format-Ms $te.original)) } else { '' }
@@ -1701,8 +1727,41 @@ function Update-ActiveCard($card, $sid, $s, [double]$now, [int]$maxRows) {
   Draw-Team $card $s $now $true
   Draw-Activity $card @($tl.rows | Where-Object { -not $_.agent }) $maxRows   # helpers are shown in the Team view
 
-  # Notice: grows open while it applies, then folds away.
-  if ($card.noticeInfo -and $now -lt $card.noticeInfo.until) {
+  # Notice: grows open while it applies, then folds away. "Needs you" comes first, then a step that
+  # just failed (shown for 45 seconds, with what failed), then the usual re-estimate notice.
+  $lastFail = $null
+  $own = @((Get-List $s.log) | Where-Object { -not $_.agent } | Sort-Object { [double]$_.endedAt })
+  if ($own.Count -gt 0 -and $own[-1].ok -eq $false -and ($now - [double]$own[-1].endedAt) -lt 45000) { $lastFail = $own[-1] }
+  $card.nyText = $null
+  # Back to the usual look first (each refresh decides again).
+  $card.root.SetResourceReference([System.Windows.Controls.Border]::BorderBrushProperty, 'CardBorder'); $card.root.BorderThickness = 1
+  $card.Notice.BorderThickness = 0
+  if ($nySince) {
+    # Seen from across the room: an amber edge on the card, a bar on the notice, and the step and
+    # clock saying "paused". (Kept still: no pulsing.)
+    $card.Dot.Fill = $script:T.wait
+    $card.root.BorderBrush = $script:T.wait; $card.root.BorderThickness = 1.5
+    $msg = (([string]$s.needsYou.message) -replace '^\s*Claude needs your permission\s*', '') -replace '^\s*Claude ', ''
+    $card.NoticeText.Inlines.Clear()
+    $b = New-Object System.Windows.Documents.Run('Needs your OK'); $b.FontWeight = 'SemiBold'
+    [void]$card.NoticeText.Inlines.Add($b)
+    $rest = $(if ($msg -match '^to ') { " $msg" } elseif ($msg) { "  ·  $msg" } else { '' }) + ('  ·  waiting {0}' -f (Format-Ms $waitNow))
+    [void]$card.NoticeText.Inlines.Add((New-Object System.Windows.Documents.Run((Format-NoWidow $rest))))
+    $card.Notice.Background = $script:T.waitBg; $card.NoticeText.Foreground = $script:T.wait
+    $card.Notice.BorderBrush = $script:T.wait; $card.Notice.BorderThickness = '3,0,0,0'
+    Set-Shown $card.Notice $true $now
+    if ($card.StepPanel.Visibility -eq 'Visible') { $card.StepHead.Text = 'THIS STEP  ·  PAUSED' }
+    $card.NowLabel.Foreground = $script:T.sub   # the step isn't running while it waits for you
+    $card.Clock.Text = (Format-Ms $spent) + '  ·  paused'; $card.Clock.Foreground = $script:T.muted
+    $card.nyText = 'Needs your OK  ·  {0}' -f ((Format-Ms $waitNow) -replace ' 00s$', '')
+  } elseif ($lastFail) {
+    $what = if ($lastFail.detail) { "$($lastFail.label)  ·  $($lastFail.detail)" } else { [string]$lastFail.label }
+    $card.NoticeText.Text = Format-NoWidow ('✗ Failed: {0}' -f $what)
+    $card.Notice.Background = $script:T.failBg; $card.NoticeText.Foreground = $script:T.failText
+    Set-Shown $card.Notice $true $now
+  } elseif ($card.noticeInfo -and $now -lt $card.noticeInfo.until) {
+    $card.Notice.SetResourceReference([System.Windows.Controls.Border]::BackgroundProperty, 'NoticeBg')
+    $card.NoticeText.SetResourceReference([System.Windows.Controls.TextBlock]::ForegroundProperty, 'NoticeText')
     $card.NoticeText.Text = $card.noticeInfo.text
     Set-Shown $card.Notice $true $now
   } else {
@@ -1738,7 +1797,8 @@ function Set-ProgressRow($card, [double]$spent, [double]$now) {
   # Short times in the slim row ("~1m" not "~1m 00s"), so the chat name keeps as much room as it can.
   $left = (Format-Ms $card.jobLeft) -replace ' 00s$', ''
   $nums = if ($null -ne $card.jobPct) { '{0}%  ·  ~{1} left' -f [math]::Floor($card.jobPct), $left } else { '{0}  ·  learning' -f ((Format-Ms $spent) -replace ' 00s$', '') }
-  $card.Clock.Text = if ($step) { "$step  ·  $nums" } else { $nums }
+  $card.Clock.Text = if ($card.nyText) { $card.nyText } elseif ($step) { "$step  ·  $nums" } else { $nums }
+  if ($card.nyText) { $card.Clock.Foreground = $script:T.wait }
   Set-RowTextStyle $card
 }
 
@@ -1746,7 +1806,9 @@ function Set-ProgressRow($card, [double]$spent, [double]$now) {
 function Update-FinishedCard($card, $s, [double]$now, [int]$maxRows, [bool]$others = $false) {
   if ($card.wasBusy -and $prefs.sound -and ($now - $card.busySince) -gt 30000) { [System.Media.SystemSounds]::Asterisk.Play() }
   $card.wasBusy = $false
+  $card.waitNow = 0
   $t0 = [double]$s.lastTurnStartedAt; $t1 = [double]$s.finishedAt
+  $took = [math]::Max(0.0, $t1 - $t0 - [math]::Max(0.0, [double](Get-Finite $s.pausedMs)))
   $tl = Get-Timeline $s $t0 $t1 $now $false
   $card.Dot.Fill = $script:T.done
   $card.Chat.Text = Get-ChatName $s
@@ -1762,7 +1824,7 @@ function Update-FinishedCard($card, $s, [double]$now, [int]$maxRows, [bool]$othe
   if ($card.compact) {
     $card.Clock.Foreground = $script:T.sub   # the summary sits quieter than the chat name
     Set-RowTextStyle $card
-    $card.Clock.Text = 'Done  ·  {0}  ·  {1} steps{2}' -f (Format-Ms ($t1 - $t0)), (Get-List $s.log).Count, $(if ($fails) { "  ·  $fails failed" } else { '' })
+    $card.Clock.Text = 'Done  ·  {0}  ·  {1} steps{2}' -f (Format-Ms $took), (Get-List $s.log).Count, $(if ($fails) { "  ·  $fails failed" } else { '' })
     Draw-Segments $card $tl.segs $t0 ([math]::Max($t1 - $t0, 1000))
     return
   }
@@ -1775,7 +1837,7 @@ function Update-FinishedCard($card, $s, [double]$now, [int]$maxRows, [bool]$othe
   Set-Shown $card.Notice $false $now
   Draw-Segments $card $tl.segs $t0 ([math]::Max($t1 - $t0, 1000))
   $card.TurnPct.Text = '100%'
-  $card.TurnText.Text = Join-Phrases ('Took {0}  ·  {1} steps{2}' -f (Format-Ms ($t1 - $t0)), (Get-List $s.log).Count, $(if ($fails) { "  ·  $fails failed" } else { '' }))
+  $card.TurnText.Text = Join-Phrases ('Took {0}  ·  {1} steps{2}' -f (Format-Ms $took), (Get-List $s.log).Count, $(if ($fails) { "  ·  $fails failed" } else { '' }))
   Draw-Team $card $s $now $false
   Draw-Activity $card @($tl.rows | Where-Object { -not $_.agent }) $maxRows   # helpers are shown in the Team view
 }
@@ -1921,8 +1983,13 @@ function Update-View {
     }
   }
 
-  # Header
-  if ($active.Count -gt 0) {
+  # Header ("needs you" first: a chat waiting for your OK is the thing to see).
+  $needIds = @($active | Where-Object { $null -ne (Get-WaitSince $_.s $now) -and $script:cards.ContainsKey($_.id) } | ForEach-Object { $_.id })
+  $needN = $needIds.Count
+  if ($needN -gt 0) {
+    $ui.Dot.Fill = $script:T.wait
+    $ui.Title.Text = if ($needN -gt 1) { "Claude needs you in $needN chats" } else { 'Claude needs you' }
+  } elseif ($active.Count -gt 0) {
     $ui.Dot.Fill = $script:T.accent
     $ui.Title.Text = if ($active.Count -gt 1) { "Claude is working in $($active.Count) chats" } else { 'Claude is working' }
   } elseif ($finished.Count -gt 0) {
@@ -1930,17 +1997,27 @@ function Update-View {
     $ui.Title.Text = 'Claude finished'
   } else {
     $ui.Dot.Fill = $script:T.done
-    $ui.Title.Text = if ($Demo) { 'Demo finished - right-click to exit' }
+    $ui.Title.Text = if ($Demo) { 'Demo finished - gear > Exit to close' }
       elseif ($prefs.hideIdle) { 'Claude is idle  ·  I''ll appear when Claude works' }
       else { 'Claude is idle' }
   }
   if ($prefs.mini) {
     # Minimized: header line + thin bar for the first working chat.
     $ui.Sessions.Visibility = 'Collapsed'; $ui.Legend.Visibility = 'Collapsed'
-    $ui.Title.Text = if ($active.Count -gt 0) { 'Working' } elseif ($finished.Count -gt 0) { 'Finished' } else { 'Idle' }
+    $ui.Title.Text = if ($needN -gt 1) { "$needN need you" } elseif ($needN -gt 0) { 'Needs you' } elseif ($active.Count -gt 0) { 'Working' } elseif ($finished.Count -gt 0) { 'Finished' } else { 'Idle' }
     $tw = $ui.MiniTrack.ActualWidth; if ($tw -le 0) { $tw = 300 }
     $more = if ($active.Count -gt 1) { "$($active.Count) chats  ·  " } else { '' }
-    if ($active.Count -gt 0) {
+    $needC = @($needIds | ForEach-Object { $script:cards[$_] }) | Select-Object -First 1
+    if ($needC) {
+      # Claude waits for your OK: say how long, not a percentage that is standing still.
+      $ui.MiniTrack.Visibility = 'Visible'
+      # Short, so "Needs you" stays whole: which chat and how long (the longest wait when several).
+      $longest = @($needIds | ForEach-Object { $script:cards[$_] } | Sort-Object { [double]$_.waitNow } -Descending) | Select-Object -First 1
+      $ui.Count.Text = if ($needN -gt 1) { 'longest {0}' -f (Format-Ms $longest.waitNow) } else { '{0}  ·  {1}' -f ($needC.Chat.Text -replace '\s+·.*$', ''), (Format-Ms $needC.waitNow) }
+      $ui.MiniFill.Background = $script:T.wait
+      if ($null -ne $needC.jobPct) { Move-To $ui.MiniFill $P_Width ($tw * $needC.jobPct / 100) 250 }
+    } elseif ($active.Count -gt 0) {
+      $ui.MiniFill.SetResourceReference([System.Windows.Controls.Border]::BackgroundProperty, 'Accent')
       $c = $script:cards[$active[0].id]
       $ui.MiniTrack.Visibility = 'Visible'
       if ($null -ne $c.jobPct) {
@@ -1962,7 +2039,8 @@ function Update-View {
     $ui.Sessions.Visibility = 'Visible'; $ui.MiniTrack.Visibility = 'Collapsed'
     # A done row that is still on its way out counts as done until it has gone.
     $doneN = $finished.Count + @($script:cards.Values | Where-Object { $_.leaving }).Count
-    $ui.Count.Text = if ($shown.Count -gt 0 -or $doneN -gt 0) { "$($active.Count) working  ·  $doneN done" } else { '' }
+    $needPart = if ($needN -gt 0) { "$needN needs you  ·  " } else { '' }
+    $ui.Count.Text = if ($shown.Count -gt 0 -or $doneN -gt 0) { "$needPart$($active.Count) working  ·  $doneN done" } else { '' }
     $ui.Legend.Visibility = if ($shown.Count -gt 0 -and $prefs.details) { 'Visible' } else { 'Collapsed' }
   }
   $justOpened = ($now - $script:startedAt) -lt $GRACE
@@ -2145,7 +2223,7 @@ $window.Add_Loaded({
   try { Update-View } catch {}
   $timer.Start()
   try { Set-ChatWatch ([bool]$prefs.chats) } catch { Write-UiError $_ }
-  # First start: let people pick a style (once; it is always under right-click > Choose a style).
+  # First start: show Settings once, quietly (it is always behind the gear and the Start menu).
   try {
     if ($Settings) { [void](Use-PickerNote $false); Show-Settings $false $true }
     elseif (-not $Demo -and -not (Use-PickerNote $true) -and -not $prefs.pickerSeen) { Show-Settings $true $false }

@@ -51,6 +51,7 @@ if (action === 'add') {
   add('Stop', 'stop')
   add('SubagentStart', 'agent-start') // a helper agent starts or finishes (also background ones)
   add('SubagentStop', 'agent-stop')
+  add('Notification', 'notify') // Claude asks for your permission mid-job ("needs you")
 }
 
 if (Object.keys(hooks).length > 0) settings.hooks = hooks

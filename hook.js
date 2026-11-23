@@ -180,8 +180,24 @@ const main = event => {
     if (!isObj(v) || (v.agent || v.by) && now - (Number(v.startedAt) || 0) > 7200000) delete s.steps[id]
   }
   const helpersLeft = () => Object.values(s.steps).some(isHelper)
+  // "Needs you": Claude stopped to ask for your permission (or a question) mid-job. The time it waits
+  // is kept out of every step and job timing, so waiting for you never makes estimates longer.
+  // Any later event for this chat means you answered: the wait ends there.
+  const resume = () => {
+    const since = isObj(s.needsYou) ? Number(s.needsYou.since) || now : now
+    const waited = Math.max(0, now - since)
+    s.pausedMs = (Number(s.pausedMs) || 0) + waited
+    // Only Claude's own steps were held up; a background helper that kept working keeps its time.
+    for (const v of Object.values(s.steps)) if (isObj(v) && !v.agent && !v.by) v.pausedMs = (Number(v.pausedMs) || 0) + waited
+    s.needsYou = null
+  }
   const agentId = e.agent_id ? String(e.agent_id) : null
   const agentType = cut(e.agent_type || 'helper', 30)
+  // A background helper's steps don't answer a prompt that Claude itself is waiting on (Claude has
+  // a step of its own open). With nothing of Claude's own open, the prompt was the helper's.
+  const mainBusy = Object.values(s.steps).some(v => isObj(v) && !v.agent && !v.by)
+  const helperEvent = Boolean(agentId) && (event === 'pre' || event === 'post' || event === 'agent-start')
+  if (event !== 'notify' && s.needsYou && !(helperEvent && mainBusy)) resume()
 
   const startTurn = () => {
     s.turnStartedAt = now
@@ -195,20 +211,22 @@ const main = event => {
     s.teamDoneAt = null
     s.finishedAt = null
     s.waiting = false
+    s.needsYou = null
+    s.pausedMs = 0
     s.promptChars = 0 // set again when the turn starts from a prompt
   }
   const finishStep = (id, step) => {
     // Count a helper's steps on the helper itself: its own steps may fall out of the log
     // (a new turn starts while it keeps working).
     if (step.by) { const h = Object.values(s.steps).find(v => isHelper(v) && v.agent === step.by); if (h) h.done = (Number(h.done) || 0) + 1 }
-    remember(step.key, now - step.startedAt)
+    remember(step.key, now - step.startedAt - (Number(step.pausedMs) || 0))
     s.log.push({ ...step, endedAt: now, ok: !failed })
     s.log = s.log.slice(-LOG_MAX)
     delete s.steps[id]
   }
   const endTurn = () => {
     if (s.turnStartedAt) {
-      s.lastTurnMs = now - s.turnStartedAt
+      s.lastTurnMs = Math.max(0, now - s.turnStartedAt - (Number(s.pausedMs) || 0))
       s.lastTurnStartedAt = s.turnStartedAt
       remember(TURN, s.lastTurnMs)
       logJob()
@@ -217,6 +235,7 @@ const main = event => {
     s.turnStartedAt = null
     s.finishedAt = now
     s.waiting = false
+    s.needsYou = null
   }
 
   // One line per finished job in jobs.jsonl, on this computer only, so time estimates can be
@@ -232,7 +251,8 @@ const main = event => {
         }
       } catch {}
       const job = {
-        startedAt: s.turnStartedAt, endedAt: now, ms: now - s.turnStartedAt,
+        // ms is working time; waitedMs is time spent waiting for your OK (kept apart, see "Needs you").
+        startedAt: s.turnStartedAt, endedAt: now, ms: Math.max(0, now - s.turnStartedAt - (Number(s.pausedMs) || 0)), waitedMs: Number(s.pausedMs) || 0,
         kind: sid.startsWith('chat:') ? 'chat' : 'code', project: base(s.cwd), promptChars: Number(s.promptChars) || 0,
         steps: s.log.filter(l => !l.agent).length, helpers: s.log.filter(l => l.agent).length,
       }
@@ -279,6 +299,13 @@ const main = event => {
     for (const [id, v] of Object.entries(s.steps)) if (v.agent === agentId || v.by === agentId) finishStep(id, v)
     if (!helpersLeft()) s.teamDoneAt = now
     if (s.waiting && !helpersLeft()) endTurn()
+  } else if (event === 'notify') {
+    // Only a prompt that blocks a running job counts: a permission request or a question to you.
+    // ("Waiting for your input" after a reply is not a blocked job: the job is already done.)
+    const type = String(e.notification_type || '')
+    const msg = String(e.message || '')
+    const asks = type ? /permission|elicitation/i.test(type) : /permission|approv/i.test(msg)
+    if (s.turnStartedAt && asks && !s.needsYou) s.needsYou = { since: now, message: cut(msg, 80) }
   } else if (event === 'stop') {
     // The reply is done, but background helpers may still be working: the job ends when they do.
     if (helpersLeft()) {

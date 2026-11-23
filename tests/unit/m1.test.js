@@ -75,7 +75,7 @@ for (const answer of ['n', '', 'maybe']) {
     })
     assert.strictEqual(r.status, 0, r.stderr)
     assert.match(r.stdout, /this install will:/)
-    assert.match(r.stdout, /Add 8 hooks/)
+    assert.match(r.stdout, /Add 9 hooks/)
     assert.match(r.stdout, /Nothing was changed/)
     // PowerShell itself creates AppDataRoaming in a new profile when it starts; nothing else may appear.
     assert.deepStrictEqual(fs.readdirSync(home).filter(n => n !== 'AppData'), [], 'the installer created nothing')
