@@ -19,8 +19,8 @@ if (-not $Outside) {
   Write-Host ''
   Write-Host "Claude Progress $version - this install will:" -ForegroundColor Cyan
   Write-Host "  1. Copy the app to $dest"
-  Write-Host "  2. Add 9 hooks to $settingsFile"
-  Write-Host '     (SessionStart, UserPromptSubmit, PreToolUse, PostToolUse, PostToolUseFailure, Stop, SubagentStart, SubagentStop, Notification).'
+  Write-Host "  2. Add 10 hooks to $settingsFile"
+  Write-Host '     (SessionStart, UserPromptSubmit, PreToolUse, PostToolUse, PostToolUseFailure, Stop, SubagentStart, SubagentStop, Notification, StopFailure).'
   Write-Host '     A backup is saved first as settings.json.before-claude-progress.bak. Your other settings and hooks are kept.'
   Write-Host '  3. Add Start menu shortcuts (app with its settings, demo, uninstaller) and a shortcut that opens the window when you sign in'
   Write-Host "  4. Add a Task Scheduler entry 'Claude Progress' that reopens the window when Claude starts (runs as you, no admin)"

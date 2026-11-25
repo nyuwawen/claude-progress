@@ -171,7 +171,7 @@ $catNames = [ordered]@{ read = 'Reading'; edit = 'Editing'; run = 'Running'; ren
           <MenuItem x:Name="MenuProgressOnly" Header="Show only progress" IsCheckable="True"/>
           <MenuItem x:Name="MenuChats" Header="Show regular Claude chats" IsCheckable="True"/>
           <MenuItem x:Name="MenuHideIdle" Header="Hide when Claude is idle" IsCheckable="True"/>
-          <MenuItem x:Name="MenuSound" Header="Sound when a long job finishes" IsCheckable="True"/>
+          <MenuItem x:Name="MenuSound" Header="Play sounds" IsCheckable="True"/>
           <Separator/>
           <MenuItem x:Name="MenuReset" Header="Move to bottom-right corner"/>
           <MenuItem x:Name="MenuExit" Header="Exit"/>
@@ -221,12 +221,43 @@ $catNames = [ordered]@{ read = 'Reading'; edit = 'Editing'; run = 'Running'; ren
             <TextBlock x:Name="BadgeText" Foreground="{DynamicResource Accent}" FontFamily="Segoe UI" FontSize="10" FontWeight="Bold"/>
           </Border>
           <TextBlock x:Name="Count" DockPanel.Dock="Right" Typography.NumeralAlignment="Tabular" Foreground="{DynamicResource TextMuted}" FontFamily="Segoe UI" FontSize="11" VerticalAlignment="Center"/>
+          <!-- Minimized with a note showing: dismiss it (next to the note, away from the window buttons). -->
+          <Button x:Name="NoticeX" DockPanel.Dock="Right" Width="24" Height="24" Margin="2,-4,4,-4" VerticalAlignment="Center" Cursor="Hand" Visibility="Collapsed"
+                  ToolTip="Dismiss note" AutomationProperties.Name="Dismiss note" Focusable="False">
+            <Button.Template>
+              <ControlTemplate TargetType="Button">
+                <Grid Background="Transparent">
+                  <Border x:Name="Hover" CornerRadius="6" Background="{DynamicResource Track}" Opacity="0"/>
+                  <TextBlock x:Name="Glyph" Text="&#xE711;" FontFamily="Segoe MDL2 Assets" FontSize="10" Foreground="{DynamicResource TextMuted}" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                </Grid>
+                <ControlTemplate.Triggers>
+                  <Trigger Property="IsMouseOver" Value="True">
+                    <Setter TargetName="Glyph" Property="Foreground" Value="{DynamicResource TextMain}"/>
+                    <Setter TargetName="Hover" Property="Opacity" Value="1"/>
+                  </Trigger>
+                </ControlTemplate.Triggers>
+              </ControlTemplate>
+            </Button.Template>
+          </Button>
           <TextBlock x:Name="Title" Foreground="{DynamicResource TextMain}" FontFamily="Segoe UI" FontSize="13" FontWeight="SemiBold" VerticalAlignment="Center" TextTrimming="CharacterEllipsis"/>
         </DockPanel>
         <!-- Shown only when minimized: the first working chat's whole-job progress. -->
         <Border x:Name="MiniTrack" Height="5" CornerRadius="2.5" Margin="0,9,0,1" Background="{DynamicResource Track}" Visibility="Collapsed">
           <Border x:Name="MiniFill" CornerRadius="2.5" HorizontalAlignment="Left" Width="0" Background="{DynamicResource Accent}"/>
         </Border>
+        <!-- Notes: a long job that ended (or failed) while you were away; they stay until dismissed. -->
+        <StackPanel x:Name="NoticeBox" Margin="0,10,0,-4" Visibility="Collapsed">
+          <StackPanel x:Name="Notices"/>
+          <StackPanel x:Name="NoticeMore" Orientation="Horizontal" Visibility="Collapsed" Margin="0,-4,0,2">
+            <Border x:Name="NoticeShowMore" Cursor="Hand" Background="Transparent" MinHeight="24" Padding="2,0">
+              <TextBlock x:Name="NoticeShowMoreText" FontFamily="Segoe UI" FontSize="11.5" Foreground="{DynamicResource TextSub}" VerticalAlignment="Center"/>
+            </Border>
+            <TextBlock x:Name="NoticeMoreSep" Text="·" Margin="6,0" FontFamily="Segoe UI" FontSize="11.5" Foreground="{DynamicResource TextMuted}" VerticalAlignment="Center"/>
+            <Border x:Name="NoticeClear" Cursor="Hand" Background="Transparent" MinHeight="24" Padding="2,0">
+              <TextBlock x:Name="NoticeClearText" FontFamily="Segoe UI" FontSize="11.5" Foreground="{DynamicResource TextSub}" VerticalAlignment="Center"/>
+            </Border>
+          </StackPanel>
+        </StackPanel>
         <StackPanel x:Name="Sessions"/>
         <WrapPanel x:Name="Legend" Margin="0,8,0,0"/>
       </StackPanel>
@@ -297,7 +328,7 @@ $cardNames = 'Dot','Clock','Chat','NowPanel','NowLabel','NowDetail','JobPanel','
 $window = [Windows.Markup.XamlReader]::Load((New-Object System.Xml.XmlNodeReader $windowXaml))
 $ui = @{}
 foreach ($n in 'Shell','GlowLayer','Glow','ModeSaver','ModeNeutral','ModeFull','Zoom','Badge','BadgeText','ThemeNormal','ThemeDADA','ThemeRen','Size75','Size100','Size125','Size150',
-               'Dot','Count','Title','Sessions','Legend','MinHit','MinHover','MinBtn','MiniTrack','MiniFill','MenuMini','MenuDetails','MenuProgressOnly','MenuChats','MenuHideIdle','MenuSound','MenuReset','MenuExit','MenuStyle','GearBtn') {
+               'Dot','Count','Title','Sessions','Legend','MinHit','MinHover','MinBtn','MiniTrack','MiniFill','MenuMini','MenuDetails','MenuProgressOnly','MenuChats','MenuHideIdle','MenuSound','MenuReset','MenuExit','MenuStyle','GearBtn','NoticeBox','Notices','NoticeMore','NoticeShowMore','NoticeShowMoreText','NoticeMoreSep','NoticeClear','NoticeClearText','NoticeX') {
   $ui[$n] = $window.FindName($n)
 }
 
@@ -543,7 +574,7 @@ $pickerXaml = @'
     <Border CornerRadius="14" Background="{DynamicResource ShellBg}" Margin="1">
       <Border.Effect><DropShadowEffect BlurRadius="24" ShadowDepth="0" Opacity="0.5" Color="Black"/></Border.Effect>
     </Border>
-    <Border Width="820" Height="620" CornerRadius="14" Background="{DynamicResource ShellBg}" BorderBrush="{DynamicResource ShellBorder}" BorderThickness="1" Padding="22,18">
+    <Border Width="820" Height="672" CornerRadius="14" Background="{DynamicResource ShellBg}" BorderBrush="{DynamicResource ShellBorder}" BorderThickness="1" Padding="22,18">
       <Grid>
         <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="*"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
         <StackPanel x:Name="Head" Background="Transparent">
@@ -609,11 +640,11 @@ if ($SelfTest) {
 }
 
 # ---------- preferences ----------
-$prefs = @{ left = $null; top = $null; hideIdle = $false; sound = $true; details = $true; scale = 1.0; theme = 'Normal'; mode = 'Neutral'; mini = $false; chats = $true; progressOnly = $false; styleChosen = $false; pickerSeen = $false; prefsVersion = 0 }
+$prefs = @{ left = $null; top = $null; hideIdle = $false; sound = $true; notify = $true; details = $true; scale = 1.0; theme = 'Normal'; mode = 'Neutral'; mini = $false; chats = $true; progressOnly = $false; styleChosen = $false; pickerSeen = $false; prefsVersion = 0 }
 if (Test-Path $prefsFile) {
   try {
     $p = Get-Content $prefsFile -Raw | ConvertFrom-Json
-    foreach ($k in 'left','top','hideIdle','sound','details','scale','theme','mode','mini','chats','progressOnly','styleChosen','pickerSeen','prefsVersion') { if ($null -ne $p.$k) { $prefs[$k] = $p.$k } }
+    foreach ($k in 'left','top','hideIdle','sound','notify','details','scale','theme','mode','mini','chats','progressOnly','styleChosen','pickerSeen','prefsVersion') { if ($null -ne $p.$k) { $prefs[$k] = $p.$k } }
   } catch {}
 }
 if ($Theme) { $prefs.theme = $Theme }
@@ -697,6 +728,16 @@ $ui.MenuChats.Add_Click({ $prefs.chats = $ui.MenuChats.IsChecked; Save-Prefs; Se
 $ui.MenuSound.Add_Click({ $prefs.sound = $ui.MenuSound.IsChecked; Save-Prefs; Request-SettingsSync })
 $ui.MenuReset.Add_Click({ Move-ToCorner; Save-Prefs })
 $ui.MenuExit.Add_Click({ $window.Close() })
+# Notes (see Update-Notices): the bar's × dismisses the newest; the "+N more" row clears them all.
+$ui.NoticeX.Add_Click({ try { if ($script:notices.Count) { Remove-Notice $script:notices[0].key; Update-View } } catch { Write-UiError $_ } })   # (the bar shows the next note at once)
+$ui.NoticeShowMore.Add_MouseLeftButtonUp({ try { $script:noteShowAll = -not $script:noteShowAll; Update-NoticeLook ([double][DateTimeOffset]::UtcNow.ToUnixTimeMilliseconds()) } catch { Write-UiError $_ } })
+$ui.NoticeClear.Add_MouseLeftButtonUp({ try { if ($script:noteUndo) { Undo-ClearNotices } else { Clear-Notices } } catch { Write-UiError $_ } })
+# The two links underline on hover, so they read as things to click.
+foreach ($l in @(@($ui.NoticeShowMore, $ui.NoticeShowMoreText), @($ui.NoticeClear, $ui.NoticeClearText))) {
+  $l[0].Tag = $l[1]
+  $l[0].Add_MouseEnter({ param($sender, $ev) $sender.Tag.TextDecorations = [System.Windows.TextDecorations]::Underline })
+  $l[0].Add_MouseLeave({ param($sender, $ev) $sender.Tag.TextDecorations = $null })
+}
 # Minimize: shrink to a slim bar (status, time left, a thin progress line). The window has no
 # taskbar button, so a real minimize would make it vanish.
 # Origin-aware: the window is anchored at its right edge, so it shrinks toward the button you clicked,
@@ -949,7 +990,8 @@ function Show-Settings([bool]$first = $false, [bool]$focus = $true) {
   $opts = [ordered]@{
     chats    = @('Show regular Claude chats', 'Also show Claude desktop app chats.', 'MenuChats')
     hideIdle = @('Hide when Claude is idle', 'The window comes back when Claude starts working.', 'MenuHideIdle')
-    sound    = @('Sound when a long job finishes', 'A short chime after jobs longer than 30 seconds.', 'MenuSound') }
+    notify   = @('Keep a note when a job ends', 'Failures and errors stay until you close them. Finished jobs clear after an hour.', $null)
+    sound    = @('Play sounds', 'A chime when a long job ends or a new note appears.', 'MenuSound') }
   foreach ($k in $opts.Keys) {
     $cb = New-Object System.Windows.Controls.CheckBox
     $cb.Style = $res['Switch']; $cb.Tag = $k
@@ -963,7 +1005,8 @@ function Show-Settings([bool]$first = $false, [bool]$focus = $true) {
       try {
         $key = [string]$sender.Tag; $on = [bool]$sender.IsChecked
         $prefs[$key] = $on
-        $ui[@{ chats = 'MenuChats'; hideIdle = 'MenuHideIdle'; sound = 'MenuSound' }[$key]].IsChecked = $on
+        $menu = @{ chats = 'MenuChats'; hideIdle = 'MenuHideIdle'; sound = 'MenuSound' }[$key]
+        if ($menu) { $ui[$menu].IsChecked = $on }
         Save-Prefs
         if ($key -eq 'chats') { Set-ChatWatch $on }
       } catch { Write-UiError $_ } })
@@ -1825,15 +1868,21 @@ function Set-ProgressRow($card, [double]$spent, [double]$now) {
 
 # Fills one card for a chat that finished in the last two minutes.
 function Update-FinishedCard($card, $s, [double]$now, [int]$maxRows, [bool]$others = $false) {
-  if ($card.wasBusy -and $prefs.sound -and ($now - $card.busySince) -gt 30000) { [System.Media.SystemSounds]::Asterisk.Play() }
+  # The chime, unless a notification (with its own sound) says it: see Update-Notices.
+  if ($card.wasBusy -and $prefs.sound -and ($now - $card.busySince) -gt 30000 -and -not ($prefs.notify -and -not $Demo -and (Get-JobNotice '' $s))) { [System.Media.SystemSounds]::Asterisk.Play() }
   $card.wasBusy = $false
   $card.waitNow = 0
   $t0 = [double]$s.lastTurnStartedAt; $t1 = [double]$s.finishedAt
   $took = [math]::Max(0.0, $t1 - $t0 - [math]::Max(0.0, [double](Get-Finite $s.pausedMs)))
   $tl = Get-Timeline $s $t0 $t1 $now $false
-  $card.Dot.Fill = $script:T.done
   $card.Chat.Text = Get-ChatName $s
   $fails = @((Get-List $s.log) | Where-Object { $_.ok -eq $false }).Count
+  # How it ended: on an error, on a failed step of Claude's own, or done (same rule as the notes).
+  $lastOwn = @((Get-List $s.log) | Where-Object { -not $_.agent -and -not $_.by } | Sort-Object { [double](Get-Finite $_.endedAt) }) | Select-Object -Last 1
+  $endWord = 'Done'; $endBrush = $script:T.done
+  if ($s.endedOn -and $s.endedOn -isnot [string] -and [double](Get-Finite $s.endedOn.at) -ge $t0) { $endWord = 'Stopped'; $endBrush = $script:T.wait }
+  elseif ($lastOwn -and $lastOwn.ok -eq $false) { $endWord = 'Failed'; $endBrush = $script:T.fail }
+  $card.Dot.Fill = $endBrush
   # Minimise to a one-line "done" row when other cards are on screen (after a short hold, and only
   # if there is time left to see it). A card on its own keeps its full summary.
   # The hold counts from when this card first SHOWED "Finished" (in Saver mode that can be a refresh
@@ -1845,14 +1894,14 @@ function Update-FinishedCard($card, $s, [double]$now, [int]$maxRows, [bool]$othe
   if ($card.compact) {
     $card.Clock.Foreground = $script:T.sub   # the summary sits quieter than the chat name
     Set-RowTextStyle $card
-    $card.Clock.Text = 'Done  ·  {0}  ·  {1} steps{2}' -f (Format-Ms $took), (Get-List $s.log).Count, $(if ($fails) { "  ·  $fails failed" } else { '' })
+    $card.Clock.Text = '{3}  ·  {0}  ·  {1} steps{2}' -f (Format-Ms $took), (Get-List $s.log).Count, $(if ($fails) { "  ·  $fails failed" } else { '' }), $endWord
     Draw-Segments $card $tl.segs $t0 ([math]::Max($t1 - $t0, 1000))
     return
   }
-  $card.Clock.Text = 'Done'
+  $card.Clock.Text = $endWord
   $card.NowPanel.Visibility = 'Visible'
-  $card.NowLabel.Text = 'Finished'
-  $card.NowLabel.Foreground = $script:T.done
+  $card.NowLabel.Text = if ($endWord -eq 'Done') { 'Finished' } else { $endWord }
+  $card.NowLabel.Foreground = $endBrush
   Set-Shown $card.NowDetail $false $now
   Set-Shown $card.StepPanel $false $now
   Set-Shown $card.Notice $false $now
@@ -1861,6 +1910,248 @@ function Update-FinishedCard($card, $s, [double]$now, [int]$maxRows, [bool]$othe
   $card.TurnText.Text = Join-Phrases ('Took {0}  ·  {1} steps{2}' -f (Format-Ms $took), (Get-List $s.log).Count, $(if ($fails) { "  ·  $fails failed" } else { '' }))
   Draw-Team $card $s $now $false
   Draw-Activity $card @($tl.rows | Where-Object { -not $_.agent }) $maxRows   # helpers are shown in the Team view
+}
+
+# ---------- notes in the window: a long job finished, failed, or stopped on an error ----------
+# A finished card folds away after a few seconds, so a job that ended while you were away leaves a
+# note under the header that stays until you dismiss it (finished-OK notes go after an hour).
+# Decided from state.json on every refresh (also while the window is hidden), once per job.
+$NOTE_LONG_MS = 120000   # a job this long is one you probably walked away from
+$NOTE_BAD_MS = 30000     # a failed step or an error: worth a note sooner
+$NOTE_GROUP_MS = 10000   # jobs that end this close together share one note
+$NOTE_KEEP_MS = 3600000  # a finished-OK note clears itself after an hour (problems stay until dismissed)
+$NOTE_SHOW = 3           # notes shown at once; the rest are counted on a "+N more" row
+$script:noted = @{}      # chat|job start -> when it was handled, so each job notes once
+$script:notices = New-Object System.Collections.ArrayList   # newest first
+$script:noteN = 0
+$script:noteShowAll = $false   # "Show N more" was clicked
+$script:noteUndo = $null      # just cleared: @{ items; until } for the Undo link
+$script:noteFrom = [double][DateTimeOffset]::UtcNow.ToUnixTimeMilliseconds()   # never for jobs that ended before the app started
+$ERROR_NAMES = @{ rate_limit = @('Rate limit reached', 'Rate limit'); authentication_failed = @('Signed out of Claude', 'Signed out')
+  oauth_org_not_allowed = @('Not allowed by your organization', 'Not allowed'); account_on_hold = @('Account on hold', 'Account on hold')
+  billing_error = @('A billing problem', 'Billing'); invalid_request = @('The request was refused', 'Refused'); model_not_found = @('Model not available', 'No model')
+  server_error = @('Claude''s servers had a problem', 'Server error'); max_output_tokens = @('The reply got too long', 'Reply too long'); cloud_credential_error = @('Cloud sign-in failed', 'Sign-in') }
+
+# What a finished job's note says, or $null when it isn't worth one.
+function Get-JobNotice($id, $s) {
+  # (Get-Finite turns a missing value into 0, so check that they are there first.)
+  if ($null -eq $s.lastTurnStartedAt -or $null -eq $s.finishedAt) { return $null }
+  $t0 = Get-Finite $s.lastTurnStartedAt; $t1 = Get-Finite $s.finishedAt
+  if (-not $t0 -or -not $t1) { return $null }
+  $took = if ($null -ne $s.lastTurnMs) { Get-Finite $s.lastTurnMs } else { $null }   # working time, waits for your OK left out (hook.js)
+  if ($null -eq $took -or $took -lt 0) { $took = [math]::Max(0.0, $t1 - $t0 - [math]::Max(0.0, [double](Get-Finite $s.pausedMs))) }
+  $log = @(Get-List $s.log)
+  $fails = @($log | Where-Object { $_.ok -eq $false }).Count
+  # Claude's own last step (a helper's failure that Claude went past doesn't count).
+  $last = @($log | Where-Object { -not $_.agent -and -not $_.by } | Sort-Object { [double](Get-Finite $_.endedAt) }) | Select-Object -Last 1
+  $folder = (Get-ChatName $s) -replace '\s+·.*$', ''
+  $n = @{ id = $id; folder = $folder; kind = 'done' }
+  $err = if ($s.endedOn -and $s.endedOn -isnot [string] -and [double](Get-Finite $s.endedOn.at) -ge $t0) { [string]$s.endedOn.error } else { $null }
+  if ($err) {
+    if ($took -lt $NOTE_BAD_MS) { return $null }
+    $what = if ($ERROR_NAMES.ContainsKey($err)) { $ERROR_NAMES[$err] } else { @('Claude hit an error', 'Error') }
+    $n.kind = 'error'; $n.line1 = "Stopped  ·  $folder"; $n.line2 = '{0}  ·  after {1}' -f $what[0], (Format-Ms $took)
+    $n.mini = "Stopped  ·  $folder  ·  $($what[1])"
+  } elseif ($last -and $last.ok -eq $false) {
+    if ($took -lt $NOTE_BAD_MS) { return $null }
+    $n.kind = 'failed'; $n.line1 = "Failed  ·  $folder"; $n.line2 = 'Last step failed: {0}  ·  {1}' -f ([string]$last.label), (Format-Ms $took)
+    $n.mini = "Failed  ·  $folder"
+  } else {
+    if ($took -lt $NOTE_LONG_MS) { return $null }
+    $n.line1 = "Done  ·  $folder"
+    $n.line2 = 'Took {0}  ·  {1} steps{2}' -f (Format-Ms $took), $log.Count, $(if ($fails -gt 1) { "  ·  $fails steps failed" } elseif ($fails) { '  ·  1 step failed' } else { '' })
+    $n.mini = "Done  ·  $folder  ·  $(Format-Ms $took)"
+  }
+  return $n
+}
+
+# The × on each note (same hover as the gear).
+$noteCloseXaml = @'
+<Button xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml" Width="20" Height="20" VerticalAlignment="Top" Cursor="Hand" ToolTip="Dismiss" Focusable="False">
+  <Button.Template>
+    <ControlTemplate TargetType="Button">
+      <Grid Background="Transparent">
+        <Border x:Name="Hover" CornerRadius="5" Background="{DynamicResource Track}" Opacity="0"/>
+        <TextBlock x:Name="Glyph" Text="&#xE711;" FontFamily="Segoe MDL2 Assets" FontSize="9" Foreground="{DynamicResource TextMuted}" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+      </Grid>
+      <ControlTemplate.Triggers>
+        <Trigger Property="IsMouseOver" Value="True">
+          <Setter TargetName="Glyph" Property="Foreground" Value="{DynamicResource TextMain}"/>
+          <Setter TargetName="Hover" Property="Opacity" Value="1"/>
+        </Trigger>
+      </ControlTemplate.Triggers>
+    </ControlTemplate>
+  </Button.Template>
+</Button>
+'@
+
+function New-NoticeEl($n) {
+  $b = New-Object System.Windows.Controls.Border
+  $b.CornerRadius = 6; $b.Padding = '10,6,4,6'; $b.Margin = '0,0,0,6'; $b.BorderThickness = '3,0,0,0'
+  $b.Cursor = 'Hand'; $b.ToolTip = 'Click to dismiss'; $b.Tag = $n.key; $b.ClipToBounds = $true
+  $g = New-Object System.Windows.Controls.Grid
+  foreach ($w in 'Auto', '*', 'Auto') { $c = New-Object System.Windows.Controls.ColumnDefinition; $c.Width = $w; [void]$g.ColumnDefinitions.Add($c) }
+  $icon = New-Object System.Windows.Controls.TextBlock
+  $icon.FontFamily = 'Segoe MDL2 Assets'; $icon.FontSize = 11; $icon.Margin = '0,3,8,0'; $icon.VerticalAlignment = 'Top'
+  $sp = New-Object System.Windows.Controls.StackPanel; [System.Windows.Controls.Grid]::SetColumn($sp, 1)
+  $l1 = New-Object System.Windows.Controls.TextBlock; $l1.FontFamily = 'Segoe UI'; $l1.FontSize = 12; $l1.FontWeight = 'SemiBold'; $l1.TextTrimming = 'CharacterEllipsis'
+  $l1.SetResourceReference([System.Windows.Controls.TextBlock]::ForegroundProperty, 'TextMain')
+  $l2 = New-Object System.Windows.Controls.TextBlock; $l2.FontFamily = 'Segoe UI'; $l2.FontSize = 11; $l2.Margin = '0,1,0,0'; $l2.TextTrimming = 'CharacterEllipsis'
+  [void]$sp.Children.Add($l1); [void]$sp.Children.Add($l2)
+  $x = [Windows.Markup.XamlReader]::Parse($noteCloseXaml); [System.Windows.Controls.Grid]::SetColumn($x, 2); $x.Margin = '4,0,0,0'; $x.Tag = $n.key
+  [System.Windows.Automation.AutomationProperties]::SetName($x, 'Dismiss')
+  $x.Add_Click({ param($sender, $ev) try { Remove-Notice ([string]$sender.Tag) } catch { Write-UiError $_ } })
+  $b.Add_MouseLeftButtonUp({ param($sender, $ev) try { Remove-Notice ([string]$sender.Tag) } catch { Write-UiError $_ } })
+  [void]$g.Children.Add($icon); [void]$g.Children.Add($sp); [void]$g.Children.Add($x)
+  $b.Child = $g
+  $n.el = $b; $n.icon = $icon; $n.l1 = $l1; $n.l2 = $l2
+}
+
+# A group note lists its chats; with one chat left it reads as that chat's own note.
+function Set-GroupText($n) {
+  $m = @($n.members)
+  if ($m.Count -eq 1) { foreach ($k in 'kind', 'line1', 'line2', 'mini') { $n[$k] = $m[0][$k] }; return }
+  $bad = @($m | Where-Object { $_.kind -ne 'done' }).Count
+  $n.kind = if ($bad) { 'failed' } else { 'done' }
+  $n.line1 = "$($m.Count) jobs finished"; $n.mini = $n.line1 + $(if ($bad) { "  ·  $bad failed" } else { '' })
+  $n.line2 = '{0}  ·  {1}' -f ((@($m | ForEach-Object { $_.folder } | Select-Object -Unique)) -join ', '), $(if ($bad) { "$bad failed" } else { 'No problems' })
+}
+
+function Add-Notice($n, [double]$now) {
+  # A newer note for the same chat replaces the older one.
+  foreach ($o in @($script:notices)) { if (@($o.members).Count -eq 1 -and $o.members[0].id -eq $n.id) { Remove-Notice $o.key $true } }
+  $newest = if ($script:notices.Count) { $script:notices[0] } else { $null }
+  if ($newest -and ($now - $newest.at) -lt $NOTE_GROUP_MS -and -not (@($newest.members | ForEach-Object { $_.id }) -contains $n.id)) {
+    $newest.members = @($newest.members) + $n; Set-GroupText $newest   # ended together: one note (and one chime)
+    return
+  }
+  $g = @{ key = 'n' + (++$script:noteN); at = $now; members = @($n) }
+  Set-GroupText $g
+  New-NoticeEl $g
+  [void]$script:notices.Insert(0, $g)
+  [void]$ui.Notices.Children.Insert(0, $g.el)
+  Update-NoticeLook $now   # styled before it is measured (one line in "Show only progress")
+  if ($script:perf.anim -and -not $Snapshot -and -not $script:reduce -and $window.IsVisible -and -not $prefs.mini) {
+    $g.el.Opacity = 0; Move-To $g.el $P_Opacity 1 220
+    Set-HeightAnim $g.el 0 (Get-NaturalHeight $g.el) 220 $true
+  }
+  if ($prefs.sound) { try { [System.Media.SystemSounds]::Asterisk.Play() } catch {} }
+}
+
+function Remove-Notice([string]$key, [bool]$instant = $false) {
+  $n = @($script:notices | Where-Object { $_.key -eq $key }) | Select-Object -First 1
+  if (-not $n) { return }
+  $script:notices.Remove($n)
+  $el = $n.el
+  if ($instant -or -not $script:perf.anim -or $script:reduce -or -not $el.IsVisible) { $ui.Notices.Children.Remove($el) }
+  else {
+    $el.IsHitTestVisible = $false
+    Move-To $el $P_Opacity 0 200
+    Set-HeightAnim $el $el.ActualHeight 0 200 $false
+    $t = New-Object System.Windows.Threading.DispatcherTimer; $t.Interval = [TimeSpan]::FromMilliseconds(210); $t.Tag = $el
+    $t.Add_Tick({ param($sender, $ev) $sender.Stop(); try { $ui.Notices.Children.Remove($sender.Tag); Update-NoticeLook ([double][DateTimeOffset]::UtcNow.ToUnixTimeMilliseconds()) } catch {} })
+    $t.Start()
+  }
+  if (-not $instant) { try { Update-NoticeLook ([double][DateTimeOffset]::UtcNow.ToUnixTimeMilliseconds()) } catch {} }
+}
+
+# Clear all, with a few seconds to take it back (it removes failures too).
+function Clear-Notices {
+  $now = [double][DateTimeOffset]::UtcNow.ToUnixTimeMilliseconds()
+  $items = @($script:notices)
+  foreach ($n in $items) { Remove-Notice $n.key $true }
+  $script:noteUndo = @{ items = $items; until = $now + 5000 }
+  $script:noteShowAll = $false
+  Update-NoticeLook $now
+}
+function Undo-ClearNotices {
+  $u = $script:noteUndo; $script:noteUndo = $null
+  if (-not $u) { return }
+  foreach ($n in @($u.items)) {
+    if ($n.el.Parent) { continue }
+    [void]$script:notices.Add($n); [void]$ui.Notices.Children.Add($n.el)
+    $n.el.BeginAnimation($P_Opacity, $null); $n.el.BeginAnimation($P_Height, $null); $n.el.Opacity = 1; $n.el.IsHitTestVisible = $true
+  }
+  Update-NoticeLook ([double][DateTimeOffset]::UtcNow.ToUnixTimeMilliseconds())
+}
+# A softer amber for "stopped" notes, so a failure (red) stays the loudest note.
+function Get-NoteAmber {
+  $c = $script:T.wait.Color
+  if (-not $script:noteAmber -or $script:noteAmberFor -ne $c) {
+    $script:noteAmber = New-Object System.Windows.Media.SolidColorBrush([System.Windows.Media.Color]::FromArgb(0x2E, $c.R, $c.G, $c.B)); $script:noteAmber.Freeze()
+    $script:noteAmberFor = $c
+  }
+  return $script:noteAmber
+}
+
+# Colours (they follow the theme), the one-line form in "Show only progress", and the row under the notes.
+function Update-NoticeLook([double]$now) {
+  if ($script:noteUndo -and $now -ge $script:noteUndo.until) { $script:noteUndo = $null }
+  foreach ($n in @($script:notices)) {
+    if ($n.kind -eq 'done' -and ($now - $n.at) -gt $NOTE_KEEP_MS) { Remove-Notice $n.key $true }
+  }
+  $i = 0
+  foreach ($n in @($script:notices)) {
+    $bar = switch ($n.kind) { 'failed' { $script:T.fail } 'error' { $script:T.wait } default { $script:T.done } }
+    switch ($n.kind) {
+      'failed' { $n.el.Background = $script:T.failBg; $n.l2.Foreground = $script:T.failText }
+      'error' { $n.el.Background = (Get-NoteAmber); $n.l2.SetResourceReference([System.Windows.Controls.TextBlock]::ForegroundProperty, 'TextSub') }
+      default { $n.el.SetResourceReference([System.Windows.Controls.Border]::BackgroundProperty, 'CardBg'); $n.l2.SetResourceReference([System.Windows.Controls.TextBlock]::ForegroundProperty, 'TextSub') }
+    }
+    $n.el.BorderBrush = $bar; $n.icon.Foreground = $bar
+    $n.icon.Text = switch ($n.kind) { 'failed' { [string][char]0xE783 } 'error' { [string][char]0xE7BA } default { [string][char]0xE73E } }
+    if ($prefs.progressOnly) { $n.l1.Text = $n.mini; $n.l2.Visibility = 'Collapsed'; $n.el.Padding = '10,3,4,3' }
+    else { $n.l1.Text = $n.line1; $n.l2.Text = $n.line2; $n.l2.Visibility = 'Visible'; $n.el.Padding = '10,6,4,6' }
+    [System.Windows.Automation.AutomationProperties]::SetName($n.el, ('{0}. {1}' -f $n.line1, $n.line2))
+    $n.el.Visibility = if ($script:noteShowAll -or $i -lt $NOTE_SHOW) { 'Visible' } else { 'Collapsed' }
+    $i++
+  }
+  # Under the notes: "Show N more · Clear all", or "Notes cleared · Undo" for 5 seconds after clearing.
+  $more = $script:notices.Count - $NOTE_SHOW
+  if ($more -le 0) { $script:noteShowAll = $false }
+  if ($script:noteUndo) {
+    $ui.NoticeShowMoreText.Text = 'Notes cleared'; $ui.NoticeShowMore.IsHitTestVisible = $false; $ui.NoticeShowMore.Cursor = $null
+    $ui.NoticeClearText.Text = 'Undo'; $row = $true
+  } else {
+    $ui.NoticeShowMoreText.Text = if ($script:noteShowAll) { 'Show fewer' } else { "Show $more more" }
+    $ui.NoticeShowMore.IsHitTestVisible = $true; $ui.NoticeShowMore.Cursor = 'Hand'
+    $ui.NoticeClearText.Text = 'Clear all'; $row = $more -gt 0
+  }
+  $ui.NoticeMore.Visibility = if ($row) { 'Visible' } else { 'Collapsed' }
+  # (Counted by what's on screen: a note folding away keeps the box open until it has gone.)
+  $ui.NoticeBox.Visibility = if (($ui.Notices.Children.Count -gt 0 -or $script:noteUndo) -and -not $prefs.mini) { 'Visible' } else { 'Collapsed' }
+}
+
+# Called on every refresh with the state just read.
+function Update-Notices($state, [double]$now) {
+  if ($Demo -or $Snapshot -or $SelfTest) { return }
+  if ($state -and $state.sessions) {
+    foreach ($p in $state.sessions.PSObject.Properties) {
+      try {
+        $id = $p.Name; $s = $p.Value
+        if ($s.turnStartedAt) {
+          # That chat started a new job: its card shows it now, so its note goes.
+          foreach ($o in @($script:notices)) {
+            $left = @($o.members | Where-Object { $_.id -ne $id })
+            if ($left.Count -eq @($o.members).Count) { continue }
+            if ($left.Count -eq 0) { Remove-Notice $o.key } else { $o.members = $left; Set-GroupText $o }
+          }
+          continue
+        }
+        if (-not $prefs.notify) { continue }
+        if ($null -eq $s.finishedAt) { continue }
+        $t1 = Get-Finite $s.finishedAt
+        if (-not $t1 -or $t1 -lt $script:noteFrom -or ($now - $t1) -gt 60000) { continue }
+        $k = "$id|$($s.lastTurnStartedAt)"
+        if ($script:noted.ContainsKey($k)) { continue }
+        $script:noted[$k] = $now
+        $n = Get-JobNotice $id $s
+        if ($n) { Add-Notice $n $now }
+      } catch { Write-UiError $_ }
+    }
+  }
+  foreach ($k in @($script:noted.Keys)) { if ($now - $script:noted[$k] -gt 86400000) { $script:noted.Remove($k) } }   # (hook.js forgets chats after a day too)
+  Update-NoticeLook $now
 }
 
 # ---------- demo ----------
@@ -1935,6 +2226,7 @@ function Update-View {
   $now = [double][DateTimeOffset]::UtcNow.ToUnixTimeMilliseconds()
   Complete-Folds $now
   $state = Read-State
+  try { Update-Notices $state $now } catch { Write-UiError $_ }
   $active = @(); $finished = @()
   if ($state -and $state.sessions) {
     foreach ($p in $state.sessions.PSObject.Properties) {
@@ -2030,6 +2322,14 @@ function Update-View {
     # The bar just appeared: put its fill where the work is, instead of growing it from zero.
     $snapFill = $ui.MiniTrack.Visibility -ne 'Visible'
     $ui.Title.Text = if ($needN -gt 1) { "$needN need you" } elseif ($needN -gt 0) { 'Needs you' } elseif ($active.Count -gt 0) { 'Working' } elseif ($finished.Count -gt 0) { 'Finished' } else { 'Idle' }
+    # A note waiting for you: the bar says it (unless a chat needs your OK, which comes first).
+    $note = if ($script:notices.Count -and $needN -eq 0) { $script:notices[0] } else { $null }
+    $ui.NoticeX.Visibility = if ($note) { 'Visible' } else { 'Collapsed' }
+    if ($note) {
+      $ui.Title.Text = $note.mini
+      # (While a chat works, the dot keeps showing that; the note is in the title.)
+      if ($active.Count -eq 0) { $ui.Dot.Fill = switch ($note.kind) { 'failed' { $script:T.fail } 'error' { $script:T.wait } default { $script:T.done } } }
+    }
     # The bar's final width (330 minus padding and border), not its width mid-shrink, so the fill
     # never overshoots while the window is still closing to the bar.
     $tw = [double]$ui.Shell.Width - 30; if ($tw -le 0) { $tw = 300 }
@@ -2055,6 +2355,9 @@ function Update-View {
         $ui.Count.Text = ('{0}{1} elapsed  ·  learning' -f $more, (Format-Ms $c.jobSpent))
         Move-To $ui.MiniFill $P_Width ($tw * 0.15) 250
       }
+    } elseif ($note) {
+      $ui.Count.Text = if ($script:notices.Count -gt 1) { '+{0}' -f ($script:notices.Count - 1) } else { '' }
+      $ui.MiniTrack.Visibility = 'Collapsed'
     } elseif ($finished.Count -gt 0) {
       $ui.Count.Text = 'done'
       $ui.MiniTrack.Visibility = 'Visible'
@@ -2063,8 +2366,10 @@ function Update-View {
       $ui.Count.Text = ''
       $ui.MiniTrack.Visibility = 'Collapsed'
     }
+    # With a note in the title, the progress next to it stays short (just the percent), so the note fits.
+    if ($note -and $active.Count -gt 0) { $c0 = $script:cards[$active[0].id]; $ui.Count.Text = '{0} working{1}' -f $active.Count, $(if ($c0 -and $null -ne $c0.jobPct) { '  ·  {0}%' -f [math]::Floor($c0.jobPct) } else { '' }) }
   } else {
-    $ui.Sessions.Visibility = 'Visible'; $ui.MiniTrack.Visibility = 'Collapsed'
+    $ui.Sessions.Visibility = 'Visible'; $ui.MiniTrack.Visibility = 'Collapsed'; $ui.NoticeX.Visibility = 'Collapsed'
     # A done row that is still on its way out counts as done until it has gone.
     $doneN = $finished.Count + @($script:cards.Values | Where-Object { $_.leaving }).Count
     $needPart = if ($needN -gt 0) { "$needN needs you  ·  " } else { '' }
@@ -2073,7 +2378,8 @@ function Update-View {
   }
   $justOpened = ($now - $script:startedAt) -lt $GRACE
   # (Never hidden while the style picker is open, so you can see the style you pick.)
-  Set-WindowShown (-not ($shown.Count -eq 0 -and $prefs.hideIdle -and -not $Demo -and -not $justOpened -and -not $script:pick)) $now
+  # (A note keeps it showing until you dismiss it.)
+  Set-WindowShown (-not ($shown.Count -eq 0 -and $script:notices.Count -eq 0 -and -not $script:noteUndo -and $prefs.hideIdle -and -not $Demo -and -not $justOpened -and -not $script:pick)) $now
   if ($active.Count -eq 0) { $script:est = @{} }
 }
 

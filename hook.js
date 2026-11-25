@@ -212,6 +212,7 @@ const main = event => {
     s.finishedAt = null
     s.waiting = false
     s.needsYou = null
+    s.endedOn = null
     s.pausedMs = 0
     s.promptChars = 0 // set again when the turn starts from a prompt
   }
@@ -231,9 +232,10 @@ const main = event => {
       remember(TURN, s.lastTurnMs)
       logJob()
     }
+    const wasRunning = Boolean(s.turnStartedAt)
     for (const [id, step] of Object.entries(s.steps)) finishStep(id, step)
     s.turnStartedAt = null
-    s.finishedAt = now
+    if (wasRunning) s.finishedAt = now // a stray Stop with no job running doesn't make an old job look just finished
     s.waiting = false
     s.needsYou = null
   }
@@ -306,7 +308,9 @@ const main = event => {
     const msg = String(e.message || '')
     const asks = type ? /permission|elicitation/i.test(type) : /permission|approv/i.test(msg)
     if (s.turnStartedAt && asks && !s.needsYou) s.needsYou = { since: now, message: cut(msg, 80) }
-  } else if (event === 'stop') {
+  } else if (event === 'stop' || event === 'stop-error') {
+    // StopFailure: the turn ended on an API error (rate limit, server error...) instead of a reply.
+    s.endedOn = event === 'stop-error' && s.turnStartedAt ? { error: cut(String(e.error || 'unknown'), 40), at: now } : null
     // The reply is done, but background helpers may still be working: the job ends when they do.
     if (helpersLeft()) {
       for (const [id, step] of Object.entries(s.steps)) if (!step.agent && !step.by) finishStep(id, step)

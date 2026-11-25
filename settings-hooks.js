@@ -49,6 +49,7 @@ if (action === 'add') {
   add('PostToolUse', 'post', '*')
   add('PostToolUseFailure', 'post', '*')
   add('Stop', 'stop')
+  add('StopFailure', 'stop-error') // the turn ended on an API error instead of a reply
   add('SubagentStart', 'agent-start') // a helper agent starts or finishes (also background ones)
   add('SubagentStop', 'agent-stop')
   add('Notification', 'notify') // Claude asks for your permission mid-job ("needs you")

@@ -115,7 +115,8 @@ Open **Settings** for everything: start **Claude Progress** from the Start menu,
 | **Show only progress** | every chat as one slim row: what it's doing, the percent and time left, and its coloured timeline as a thin line |
 | **Show regular Claude chats** | also track chats in the Claude desktop app (on by default) |
 | **Hide when Claude is idle** | only show the window while Claude works |
-| **Sound when a long job finishes** | a chime after jobs longer than 30 seconds |
+| **Show finished jobs until I dismiss them** | a note under the header when a job ends while you're away: done after 2 minutes or more, or a failed last step or an error (rate limit, server error...) after 30 seconds or more. Jobs that end within 10 seconds of each other share one note. Notes stay until you click them or their ×; done notes clear themselves after an hour. While a note is showing, *Hide when Claude is idle* keeps the window up. Minimized, the bar shows the newest note (on by default) |
+| **Play sounds** | a chime when a job over 30 seconds finishes; notifications make their sound too |
 
 ### Minimized
 
@@ -150,6 +151,8 @@ The installer registers `hook.js` as a Claude Code [hook](https://code.claude.co
 | `PostToolUse` / `PostToolUseFailure` | a step ends (or fails) |
 | `SubagentStart` / `SubagentStop` | a helper agent starts / finishes |
 | `Stop` | Claude's reply is finished (the job ends once any background helpers are done too) |
+| `StopFailure` | the reply ended on an error instead (rate limit, server error...) |
+| `Notification` | Claude asks for your OK mid-job ("Needs you") |
 
 `hook.js` records what's happening in `%USERPROFILE%\.claude-progress\state.json` and keeps the last 12 durations of each kind of step in `history.json`. A file lock keeps several chats from overwriting each other. The hook never prints anything and always exits successfully, so it can never block or slow down Claude.
 
@@ -160,7 +163,7 @@ The window (`ClaudeProgress.ps1`) is WPF running in Windows PowerShell 5.1, so t
 <summary><b>What the installer changes</b></summary>
 
 - Copies the app to `%USERPROFILE%\.claude-progress\app`
-- Adds nine hooks to `~/.claude/settings.json`. A backup is saved first as `settings.json.before-claude-progress.bak`, and your other settings and hooks are kept. Running it twice doesn't duplicate anything.
+- Adds ten hooks to `~/.claude/settings.json`. A backup is saved first as `settings.json.before-claude-progress.bak`, and your other settings and hooks are kept. Running it twice doesn't duplicate anything.
 - Adds Start menu shortcuts (**Claude Progress**, which also opens Settings, **Claude Progress Demo**, **Uninstall Claude Progress**)
 - Starts the app with Windows, and adds a **Claude Progress** task in Task Scheduler that the hook uses to reopen the window whenever a Claude session starts and it isn't running
 
