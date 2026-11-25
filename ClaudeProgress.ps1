@@ -40,7 +40,7 @@ Add-Type -Namespace ClaudeProgress -Name Mem -MemberDefinition '[DllImport("psap
 $modes = [ordered]@{
   Saver   = @{ fps = 20; refresh = 1500; anim = $false; glow = $false; trim = 20 }
   Neutral = @{ fps = 40; refresh = 500;  anim = $true;  glow = $true;  trim = 120 }
-  Full    = @{ fps = 60; refresh = 250;  anim = $true;  glow = $true;  trim = 0 }
+  Full    = @{ fps = 60; refresh = 500;  anim = $true;  glow = $true;  trim = 0 }   # (the bars glide between refreshes, so 500 ms looks the same and leaves the animations more time)
 }
 $script:perf = $modes.Neutral
 
@@ -125,7 +125,7 @@ $catNames = [ordered]@{ read = 'Reading'; edit = 'Editing'; run = 'Running'; ren
         WindowStyle="None" AllowsTransparency="True" Background="Transparent"
         Topmost="True" ShowInTaskbar="False" ResizeMode="NoResize">
   <!-- Fixed width: the window keeps its right edge when minimized (the empty part is click-through). -->
-  <Grid Margin="14" Width="440">
+  <Grid Margin="14" Width="440" VerticalAlignment="Top">
     <Grid.LayoutTransform>
       <ScaleTransform x:Name="Zoom" ScaleX="1" ScaleY="1"/>
     </Grid.LayoutTransform>
@@ -640,11 +640,11 @@ if ($SelfTest) {
 }
 
 # ---------- preferences ----------
-$prefs = @{ left = $null; top = $null; hideIdle = $false; sound = $true; notify = $true; details = $true; scale = 1.0; theme = 'Normal'; mode = 'Neutral'; mini = $false; chats = $true; progressOnly = $false; styleChosen = $false; pickerSeen = $false; prefsVersion = 0 }
+$prefs = @{ left = $null; top = $null; right = $null; hideIdle = $false; sound = $true; notify = $true; details = $true; scale = 1.0; theme = 'Normal'; mode = 'Neutral'; mini = $false; chats = $true; progressOnly = $false; styleChosen = $false; pickerSeen = $false; prefsVersion = 0 }
 if (Test-Path $prefsFile) {
   try {
     $p = Get-Content $prefsFile -Raw | ConvertFrom-Json
-    foreach ($k in 'left','top','hideIdle','sound','notify','details','scale','theme','mode','mini','chats','progressOnly','styleChosen','pickerSeen','prefsVersion') { if ($null -ne $p.$k) { $prefs[$k] = $p.$k } }
+    foreach ($k in 'left','top','right','hideIdle','sound','notify','details','scale','theme','mode','mini','chats','progressOnly','styleChosen','pickerSeen','prefsVersion') { if ($null -ne $p.$k) { $prefs[$k] = $p.$k } }
   } catch {}
 }
 if ($Theme) { $prefs.theme = $Theme }
@@ -652,7 +652,12 @@ if ($Mode) { $prefs.mode = $Mode }
 if ($Snapshot) { $prefs.scale = 1.0; $prefs.details = $true; $prefs.progressOnly = $false; $prefs.hideIdle = $false; $prefs.left = -10000; $prefs.top = -10000 }
 function Save-Prefs {
   if ($Demo -or $Snapshot) { return }   # the demo and previews never change your saved settings
-  if ($window.IsLoaded) { $prefs.left = $window.Left; $prefs.top = $window.Top }
+  # The place you chose (homeTop), not where the window had to move to stay on screen.
+  if ($window.IsLoaded) {
+    $prefs.left = $window.Left
+    if ($null -ne $script:homeRight) { $prefs.right = $script:homeRight }
+    $prefs.top = if ($null -ne $script:homeTop) { $script:homeTop } else { $window.Top }
+  }
   $prefs | ConvertTo-Json | Set-Content -Path $prefsFile -Encoding utf8
 }
 # Settings version 2 (once): "has seen the style picker" (pickerSeen, any close) is kept apart from
@@ -663,11 +668,14 @@ if (-not $Demo -and -not $Snapshot -and ([int]($prefs.prefsVersion -as [int]) -l
   try { Save-Prefs } catch {}
 }
 function Move-ToCorner {
-  $wa = [System.Windows.SystemParameters]::WorkArea
+  $wa = if ($window.IsLoaded) { Get-WorkArea } else { [System.Windows.SystemParameters]::WorkArea }
   $h = if ($window.ActualHeight -gt 0) { $window.ActualHeight } else { 300 }
   $w = if ($window.ActualWidth -gt 0) { $window.ActualWidth } else { 468 }
   $window.Left = $wa.Right - $w - 4
   $window.Top = $wa.Bottom - $h - 4
+  Set-WindowHome
+  # In the corner it stays in the corner: as low as it fits, whatever its height (it grows upward from there).
+  $script:homeTop = $wa.Bottom
 }
 
 # Theme menu
@@ -747,6 +755,12 @@ function Write-UiError($err) {
   try { Add-Content -Path (Join-Path $root 'window-errors.log') -Value "$(Get-Date -Format s) $($err.Exception.Message) @ line $($err.InvocationInfo.ScriptLineNumber)" } catch {}
 }
 function Set-Mini([bool]$on, [bool]$save = $true) {
+  # The refresh below takes a moment: the morph starts after it, on a fresh frame (see Start-Anim).
+  if (-not $save) { Set-MiniNow $on $save; return }   # (at startup, before the motion helpers exist)
+  $prevIn = $script:inView; $script:inView = $true
+  try { Set-MiniNow $on $save } finally { $script:inView = $prevIn; if (-not $prevIn) { Invoke-AnimQueue } }
+}
+function Set-MiniNow([bool]$on, [bool]$save) {
   $morph = $save -and $script:perf.anim -and -not $Snapshot -and $window.IsLoaded
   $oldW = $ui.Shell.ActualWidth; $oldH = $ui.Shell.ActualHeight
   $prefs.mini = $on
@@ -763,7 +777,7 @@ function Set-Mini([bool]$on, [bool]$save = $true) {
   if ($save) { Save-Prefs; $script:revealing = $true; try { Update-View } catch {} finally { $script:revealing = $false } }
   Request-SettingsSync
   if ($morph) {
-    $ui.Shell.Measure((New-Object System.Windows.Size($newW, [double]::PositiveInfinity)))
+    Invoke-Unheld { $ui.Shell.Measure((New-Object System.Windows.Size($newW, [double]::PositiveInfinity))) }
     $newH = $ui.Shell.DesiredSize.Height
     $ui.Shell.ClipToBounds = $true
     Set-PropAnim $ui.Shell $P_Width $oldW $newW 300 $true
@@ -773,11 +787,12 @@ function Set-Mini([bool]$on, [bool]$save = $true) {
       # Closing to the bar: the chats stay (clipped) and fade out while the window shrinks around them,
       # so there is never an empty frame; Update-View hides them once the shrink is done.
       $script:shrinkUntil = [double][DateTimeOffset]::UtcNow.ToUnixTimeMilliseconds() + 280
+      Add-AfterAnim { $script:shrinkUntil = [double][DateTimeOffset]::UtcNow.ToUnixTimeMilliseconds() + 280 }
       # Hidden exactly as the shrink ends (not at the next refresh), so the window never grows back to fit them.
       $hideT = New-Object System.Windows.Threading.DispatcherTimer
       $hideT.Interval = [TimeSpan]::FromMilliseconds(280)
       $hideT.Add_Tick({ param($sender, $ev) $sender.Stop(); if ($prefs.mini) { $ui.Sessions.Visibility = 'Collapsed' } })
-      $hideT.Start()
+      Add-AfterAnim ({ $hideT.Start() }.GetNewClosure())   # (counts from when the shrink really starts)
       $ui.Sessions.Visibility = 'Visible'; $ui.Sessions.BeginAnimation($P_Opacity, $null); $ui.Sessions.Opacity = 1; Move-To $ui.Sessions $P_Opacity 0 250
       $ui.Legend.Visibility = 'Collapsed'
     }
@@ -797,7 +812,17 @@ $ui.MenuMini.Add_Click({ try { Set-Mini ([bool]$ui.MenuMini.IsChecked) } catch {
 $ui.Shell.Add_MouseLeftButtonDown({
   param($sender, $ev)
   if ($ev.ClickCount -eq 2) { try { Set-Mini (-not $prefs.mini) } catch { Write-UiError $_ }; return }
-  try { $window.DragMove(); Save-Prefs } catch {}
+  # (While dragging, a size change must not pull the window back to where it was.)
+  # Mid-transition the window is held at one size with the content sliding inside it: end that first,
+  # so what you drag (and the place saved) is the window as it looks.
+  if ($script:frozen) { try { $script:animUntil = 0; Exit-Freeze } catch {} }
+  $x0 = $window.Left; $y0 = $window.Top
+  $script:dragging = $true
+  try { $window.DragMove() } catch {} finally { $script:dragging = $false }
+  # Only a real move sets the window's place: a plain click (on a note, say) must not make wherever
+  # the window had to move to (to stay on screen) its new home.
+  $moved = [math]::Abs($window.Left - $x0) -gt 2 -or [math]::Abs($window.Top - $y0) -gt 2
+  try { if ($moved) { Set-WindowHome; Save-Prefs }; Set-WindowTop } catch {}
 })
 if (-not $Snapshot) { Set-Mini ([bool]$prefs.mini) $false }
 
@@ -1084,11 +1109,41 @@ function Use-PickerNote([bool]$open) {
   if ($open -and $fresh) { Show-Settings $true $false; return $true }
   return $false
 }
-# Keep the window on screen as cards come and go.
-$window.Add_SizeChanged({
-  $wa = [System.Windows.SystemParameters]::WorkArea
-  if ($window.Top + $window.ActualHeight -gt $wa.Bottom) { $window.Top = [math]::Max($wa.Top, $wa.Bottom - $window.ActualHeight - 4) }
-})
+# The window's top edge stays where you put it (homeTop) as it grows and shrinks, in every style and
+# size: it grows and shrinks downward. Only when it would run off the bottom of the screen does it
+# move up, just as far as it must, and it comes back down as soon as it gets shorter again.
+$script:homeTop = $null
+$script:homeRight = $null   # the right edge you chose (a bigger size grows to the left)
+$script:dragging = $false
+# The work area (screen minus taskbar) of the monitor the window is on, in WPF units.
+try { Add-Type -AssemblyName System.Windows.Forms } catch {}   # (Screen: which monitor the window is on)
+function Get-WorkArea {
+  try {
+    $h = (New-Object System.Windows.Interop.WindowInteropHelper $window).Handle
+    $src = [System.Windows.PresentationSource]::FromVisual($window)
+    if ($h -ne [IntPtr]::Zero -and $src) {
+      $r = [System.Windows.Forms.Screen]::FromHandle($h).WorkingArea
+      $m = $src.CompositionTarget.TransformFromDevice
+      $p1 = $m.Transform((New-Object System.Windows.Point($r.Left, $r.Top))); $p2 = $m.Transform((New-Object System.Windows.Point($r.Right, $r.Bottom)))
+      return New-Object System.Windows.Rect($p1, $p2)
+    }
+  } catch {}
+  return [System.Windows.SystemParameters]::WorkArea
+}
+function Set-WindowTop {
+  if ($null -eq $script:homeTop -or $Snapshot -or $script:dragging -or $script:frozen) { return }
+  $wa = Get-WorkArea
+  $top = [math]::Max($wa.Top, [math]::Min([double]$script:homeTop, $wa.Bottom - $window.ActualHeight - 4))
+  if ([math]::Abs($window.Top - $top) -gt 0.5) { $window.Top = $top }
+  # Sideways the same way: the right edge stays, unless the window would run off the screen.
+  if ($null -ne $script:homeRight -and $window.ActualWidth -gt 0) {
+    $left = [math]::Max($wa.Left, [math]::Min([double]$script:homeRight - $window.ActualWidth, $wa.Right - $window.ActualWidth))
+    if ([math]::Abs($window.Left - $left) -gt 0.5) { $window.Left = $left }
+  }
+}
+# Remembers where you put the window (after a drag, Move to corner or at start).
+function Set-WindowHome { $script:homeTop = $window.Top; if ($window.ActualWidth -gt 0) { $script:homeRight = $window.Left + $window.ActualWidth } }
+$window.Add_SizeChanged({ try { Set-WindowTop } catch {} })
 
 # ---------- helpers ----------
 function Format-Ms([double]$ms) {
@@ -1130,6 +1185,123 @@ $P_X = [System.Windows.Media.TranslateTransform]::XProperty
 $P_Y = [System.Windows.Media.TranslateTransform]::YProperty
 
 # Animates one property from wherever it is now. 'linear' for steady progress, 'out' for state changes.
+# While a fold, morph or note is moving, the refresh holds back its heavy work (it runs on the same
+# thread as the animations, so a long refresh makes them stutter). See the timer tick.
+$script:animUntil = 0.0
+function Set-AnimBusy([int]$ms, [double]$grow = 0) {
+  $u = [double][DateTimeOffset]::UtcNow.ToUnixTimeMilliseconds() + $ms
+  if ($u -gt $script:animUntil) { $script:animUntil = $u }
+  if ($grow -gt 0) { $script:freezeGrow += $grow * $ui.Zoom.ScaleY }
+  if (-not $script:freezePending) { $script:freezePending = $true; [void]$window.Dispatcher.BeginInvoke([Action]{ try { Enter-Freeze } catch { Write-UiError $_ } }, [System.Windows.Threading.DispatcherPriority]::Normal) }
+}
+# Resize once per transition: while a layout animation runs, the window keeps one size and place
+# (the union of where it is and where it can end up) and the content slides inside it by a render
+# offset that follows the same rule as Set-WindowTop. The empty part is transparent (click-through).
+$script:frozen = $false; $script:freezePending = $false; $script:freezeGrow = 0.0
+$script:freezeShift = New-Object System.Windows.Media.TranslateTransform
+$script:freezeHooked = $false
+$script:freezeTimer = New-Object System.Windows.Threading.DispatcherTimer
+$script:freezeTimer.Add_Tick({ try { Exit-Freeze } catch { Write-UiError $_ } })
+function Get-HomeTopFor([double]$h) { $wa = Get-WorkArea; [math]::Max($wa.Top, [math]::Min([double]$script:homeTop, $wa.Bottom - $h - 4)) }
+function Enter-Freeze {
+  $script:freezePending = $false; $grow = $script:freezeGrow; $script:freezeGrow = 0.0
+  if ($null -eq $script:homeTop -or $Snapshot -or $script:dragging -or -not $window.IsLoaded) { return }
+  $root = $window.Content
+  if (-not $script:frozen) {
+    if (-not $script:freezeHooked) { $script:freezeHooked = $true; $root.RenderTransform = $script:freezeShift; $root.Add_SizeChanged({ try { Update-FreezeShift } catch {} }) }
+    $script:freezeShift.Y = 0
+    $script:frozenH = $window.ActualHeight; $script:frozenTop = $window.Top
+    $window.SizeToContent = 'Manual'; $window.Height = $script:frozenH
+    $script:frozen = $true
+  }
+  # Room for the tallest this transition can get (now + every growth asked for).
+  Expand-Freeze ($root.DesiredSize.Height + $grow)
+  $script:freezeTimer.Stop(); $script:freezeTimer.Interval = [TimeSpan]::FromMilliseconds([math]::Max(16, $script:animUntil - [double][DateTimeOffset]::UtcNow.ToUnixTimeMilliseconds() + 80)); $script:freezeTimer.Start()
+}
+function Expand-Freeze([double]$h) {
+  $cur = $script:frozenTop + $script:freezeShift.Y   # where the content's top is drawn now
+  $t = [math]::Min($script:frozenTop, (Get-HomeTopFor $h))
+  $b = [math]::Max($script:frozenTop + $script:frozenH, (Get-HomeTopFor $h) + $h)
+  if ($t -lt $script:frozenTop - 0.5) { $script:frozenH += $script:frozenTop - $t; $script:frozenTop = $t; $window.Top = $t }
+  if ($b - $script:frozenTop -gt $script:frozenH + 0.5) { $script:frozenH = $b - $script:frozenTop }
+  if ([math]::Abs($window.Height - $script:frozenH) -gt 0.5) { $window.Height = $script:frozenH }
+  $script:freezeShift.Y = $cur - $script:frozenTop
+}
+function Update-FreezeShift {
+  if (-not $script:frozen) { return }
+  $h = $window.Content.DesiredSize.Height
+  if ($h -gt $script:frozenH - 0.5) { $window.Content.Measure((New-Object System.Windows.Size($window.ActualWidth, [double]::PositiveInfinity))); $h = $window.Content.DesiredSize.Height; Expand-Freeze $h }
+  $script:freezeShift.Y = (Get-HomeTopFor $h) - $script:frozenTop
+}
+function Exit-Freeze {
+  $left = $script:animUntil - [double][DateTimeOffset]::UtcNow.ToUnixTimeMilliseconds()
+  if ($left -gt 0) { $script:freezeTimer.Interval = [TimeSpan]::FromMilliseconds($left + 80); return }
+  $script:freezeTimer.Stop()
+  if (-not $script:frozen) { return }
+  $h = $window.Content.DesiredSize.Height
+  $top = Get-HomeTopFor $h
+  $script:frozen = $false
+  if ([math]::Abs($window.Top - $top) -gt 0.5) { $window.Top = $top }
+  $script:freezeShift.Y = 0
+  $window.SizeToContent = 'WidthAndHeight'
+  Set-WindowTop
+}
+
+# Animations started while a refresh (or a style switch) is busy wait until it has finished and a
+# frame has been drawn, then start together. WPF times an animation from the last drawn frame, so one
+# started 100 ms into a long refresh would already be 100 ms along when it is first seen: a jump.
+# Until then the element holds its starting value ($from), so nothing flashes.
+$script:animQueue = New-Object System.Collections.ArrayList
+$script:easeTo = @{}   # element|property -> @(target, until) for running ease-outs (see Move-To)
+$script:inView = $false
+$script:animAfter = New-Object System.Collections.ArrayList   # things to start once the queued animations have (timers)
+function Start-Anim($el, $prop, $anim, $from = $null) {
+  if (-not $script:inView) { $el.BeginAnimation($prop, $anim); return }
+  # A newer request for the same element and property replaces the waiting one (keeping the value
+  # the element had before either of them).
+  $prev = @($script:animQueue | Where-Object { [object]::ReferenceEquals($_[0], $el) -and $_[1] -eq $prop }) | Select-Object -First 1
+  $held = $false; $old = $null
+  if ($prev) { $held = $prev[3]; $old = $prev[4]; [void]$script:animQueue.Remove($prev) }
+  if ($null -ne $from) {
+    if (-not $held) { $old = $el.ReadLocalValue($prop); $held = $true }
+    $el.BeginAnimation($prop, $null); $el.SetValue($prop, [double]$from)
+  }
+  [void]$script:animQueue.Add(@($el, $prop, $anim, $held, $old))
+}
+# Runs $sb now, or (during a refresh) right after the waiting animations start, so timers count from there.
+function Add-AfterAnim([scriptblock]$sb) { if ($script:inView) { [void]$script:animAfter.Add($sb) } else { & $sb } }
+# Measures with the waiting animations' starting values taken out (they aren't on screen yet).
+function Invoke-Unheld([scriptblock]$sb) {
+  $held = @($script:animQueue | Where-Object { $_[3] })
+  $now0 = @(foreach ($it in $held) { $v = $it[0].ReadLocalValue($it[1]); if ($it[4] -eq [System.Windows.DependencyProperty]::UnsetValue) { $it[0].ClearValue($it[1]) } else { $it[0].SetValue($it[1], $it[4]) }; ,@($it, $v) })
+  try { & $sb } finally { foreach ($p in @($now0)) { if ($p) { $p[0][0].SetValue($p[0][1], $p[1]) } } }
+}
+function Invoke-AnimQueue {
+  if ($script:animQueue.Count -eq 0 -and $script:animAfter.Count -eq 0) { return }
+  # Loaded priority: after the frame is drawn, but before any click is handled.
+  [void]$window.Dispatcher.BeginInvoke([Action]{
+    $q = @($script:animQueue); $script:animQueue.Clear()
+    foreach ($it in $q) {
+      try {
+        # Give back the value it had before (often "automatic"), so a released animation ends right.
+        if ($it[3]) { if ($it[4] -eq [System.Windows.DependencyProperty]::UnsetValue) { $it[0].ClearValue($it[1]) } else { $it[0].SetValue($it[1], $it[4]) } }
+        $it[0].BeginAnimation($it[1], $it[2])
+      } catch {}
+    }
+    $after = @($script:animAfter); $script:animAfter.Clear()
+    foreach ($sb in $after) { try { & $sb } catch {} }
+  }, [System.Windows.Threading.DispatcherPriority]::Loaded)
+}
+# Move-To for something refreshed every tick (the minimized bar's fill): asking again for the same
+# place while it's still easing there would restart the ease-out and make it lurch, so that is skipped.
+function Move-ToOnce($target, $prop, [double]$to, [int]$ms) {
+  $k = '{0}|{1}' -f [System.Runtime.CompilerServices.RuntimeHelpers]::GetHashCode($target), $prop.Name
+  $tn = [double][DateTimeOffset]::UtcNow.ToUnixTimeMilliseconds()
+  $last = $script:easeTo[$k]
+  if ($last -and [math]::Abs($last[0] - $to) -lt 0.5 -and ($tn -lt $last[1] -or [math]::Abs([double]$target.GetValue($prop) - $to) -lt 0.5)) { return }
+  $script:easeTo[$k] = @($to, ($tn + $ms + 50))
+  Move-To $target $prop $to $ms
+}
 function Move-To($target, $prop, [double]$to, [int]$ms, [string]$ease = 'out', [int]$delay = 0) {
   if ($Snapshot -or $ms -le 0 -or -not $script:perf.anim) { $target.BeginAnimation($prop, $null); $target.SetValue($prop, $to); return }
   if ($ease -eq 'linear') {
@@ -1143,7 +1315,7 @@ function Move-To($target, $prop, [double]$to, [int]$ms, [string]$ease = 'out', [
   }
   [System.Windows.Media.Animation.Timeline]::SetDesiredFrameRate($a, $script:perf.fps)
   if ($delay -gt 0) { $a.BeginTime = [TimeSpan]::FromMilliseconds($delay) }
-  $target.BeginAnimation($prop, $a)
+  Start-Anim $target $prop $a
 }
 
 # Fade in, rising $rise pixels (cards, notices). 220ms ease-out.
@@ -1172,6 +1344,7 @@ function Set-HeightAnim($el, [double]$from, [double]$to, [int]$ms, [bool]$releas
 }
 # Animates any size property from -> to with the strong ease-out, optionally after a delay (stagger).
 function Set-PropAnim($el, $prop, [double]$from, [double]$to, [int]$ms, [bool]$release, [int]$delay = 0) {
+  Set-AnimBusy ($ms + $delay) $(if ($prop -eq $P_Height) { $to - $from } else { 0 })
   $a = New-Object System.Windows.Media.Animation.DoubleAnimationUsingKeyFrames
   if ($delay -gt 0) { $a.BeginTime = [TimeSpan]::FromMilliseconds($delay) }
   [void]$a.KeyFrames.Add((New-Object System.Windows.Media.Animation.DiscreteDoubleKeyFrame($from, [System.Windows.Media.Animation.KeyTime]::FromTimeSpan([TimeSpan]::Zero))))
@@ -1179,7 +1352,7 @@ function Set-PropAnim($el, $prop, [double]$from, [double]$to, [int]$ms, [bool]$r
   [void]$a.KeyFrames.Add((New-Object System.Windows.Media.Animation.SplineDoubleKeyFrame($to, $kt, $easeOut)))
   if ($release) { $a.FillBehavior = [System.Windows.Media.Animation.FillBehavior]::Stop }
   [System.Windows.Media.Animation.Timeline]::SetDesiredFrameRate($a, $script:perf.fps)
-  $el.BeginAnimation($prop, $a)
+  Start-Anim $el $prop $a $from
 }
 
 # Height the element wants at its parent's width (without its margin).
@@ -1189,11 +1362,13 @@ function Get-NaturalHeight($el) {
   # Its children may have just changed (shown, hidden, height animation removed): without this,
   # WPF hands back the size it measured last time.
   $el.InvalidateMeasure()
-  $el.Measure((New-Object System.Windows.Size($pw, [double]::PositiveInfinity)))
+  if ($script:animQueue.Count) { Invoke-Unheld { $el.Measure((New-Object System.Windows.Size($pw, [double]::PositiveInfinity))) } }
+  else { $el.Measure((New-Object System.Windows.Size($pw, [double]::PositiveInfinity))) }
   return [math]::Max(0, $el.DesiredSize.Height - $el.Margin.Top - $el.Margin.Bottom)
 }
 
 function Set-Shown($el, [bool]$show, [double]$now) {
+  if ($script:skipShown) { return }   # a one-line row: its parts stay folded (they'd restart a grow every refresh)
   $id = [System.Runtime.CompilerServices.RuntimeHelpers]::GetHashCode($el)
   $folding = $script:folding.ContainsKey($id)
   $instant = $Snapshot -or -not $script:perf.anim
@@ -1230,24 +1405,26 @@ $P_ScaleY = [System.Windows.Media.ScaleTransform]::ScaleYProperty
 $HOLD_MS = 1200; $FOLD_MS = 900
 # Animates a double property from -> to with the soft curve.
 function Set-SoftAnim($el, $prop, [double]$from, [double]$to, [int]$ms, [int]$delay = 0, [bool]$release = $false) {
+  Set-AnimBusy ($ms + $delay) $(if ($prop -eq $P_Height) { $to - $from } else { 0 })
   $a = New-Object System.Windows.Media.Animation.DoubleAnimationUsingKeyFrames
   if ($delay -gt 0) { $a.BeginTime = [TimeSpan]::FromMilliseconds($delay) }
   [void]$a.KeyFrames.Add((New-Object System.Windows.Media.Animation.DiscreteDoubleKeyFrame($from, [System.Windows.Media.Animation.KeyTime]::FromTimeSpan([TimeSpan]::Zero))))
   [void]$a.KeyFrames.Add((New-Object System.Windows.Media.Animation.SplineDoubleKeyFrame($to, [System.Windows.Media.Animation.KeyTime]::FromTimeSpan([TimeSpan]::FromMilliseconds($ms)), $easeSoft)))
   if ($release) { $a.FillBehavior = [System.Windows.Media.Animation.FillBehavior]::Stop }
   [System.Windows.Media.Animation.Timeline]::SetDesiredFrameRate($a, $script:perf.fps)
-  $el.BeginAnimation($prop, $a)
+  Start-Anim $el $prop $a $from
 }
 # Animates an element's top margin with the soft curve (so gaps close and open smoothly instead of snapping).
 function Set-MarginTop($el, [double]$to, [int]$ms, [int]$delay = 0) {
   $m = $el.Margin
   $target = New-Object System.Windows.Thickness($m.Left, $to, $m.Right, $m.Bottom)
   if ($ms -le 0) { $el.BeginAnimation($P_Margin, $null); $el.Margin = $target; return }
+  Set-AnimBusy ($ms + $delay) ($to - $m.Top)
   $a = New-Object System.Windows.Media.Animation.ThicknessAnimationUsingKeyFrames
   [void]$a.KeyFrames.Add((New-Object System.Windows.Media.Animation.SplineThicknessKeyFrame($target, [System.Windows.Media.Animation.KeyTime]::FromTimeSpan([TimeSpan]::FromMilliseconds($ms)), $easeSoft)))
   if ($delay -gt 0) { $a.BeginTime = [TimeSpan]::FromMilliseconds($delay) }
   [System.Windows.Media.Animation.Timeline]::SetDesiredFrameRate($a, $script:perf.fps)
-  $el.BeginAnimation($P_Margin, $a)
+  Start-Anim $el $P_Margin $a
 }
 function Get-FoldParts($card) { @($card.NowPanel, $card.JobHead, $card.TurnText, $card.TeamPanel, $card.StepPanel, $card.Notice, $card.DetailPanel) }
 
@@ -1287,7 +1464,7 @@ function Enter-Compact($card, [double]$now) {
   Set-MarginTop $card.JobPanel 7 $FOLD_MS
   Set-SoftAnim $card.JobBarScale $P_ScaleY $card.JobBarScale.ScaleY 0.25 $FOLD_MS
   $card.Clock.Opacity = 0.2; Move-To $card.Clock $P_Opacity 1 260 'out' 140
-  $card.settleAt = $now + $FOLD_MS + 40
+  $card.settleAt = $now + $FOLD_MS + 200   # (slack: the fold may start a moment later, see Start-Anim)
 }
 # Once the fold has finished: collapse the folded parts and hand the height back to layout.
 function Complete-Compact($card) {
@@ -1298,6 +1475,7 @@ function Complete-Compact($card) {
 # A minimised card whose chat started working again opens back up from where it is.
 function Exit-Compact($card) {
   $card.compact = $false; $card.settleAt = 0
+  $script:skipShown = $false   # its parts open again from here (see Set-Shown)
   $root = $card.root
   $from = $root.ActualHeight
   # Give the parts their height and gap back, growing from zero on the same curve as the fold, so the
@@ -1874,14 +2052,24 @@ function Update-FinishedCard($card, $s, [double]$now, [int]$maxRows, [bool]$othe
   $card.waitNow = 0
   $t0 = [double]$s.lastTurnStartedAt; $t1 = [double]$s.finishedAt
   $took = [math]::Max(0.0, $t1 - $t0 - [math]::Max(0.0, [double](Get-Finite $s.pausedMs)))
-  $tl = Get-Timeline $s $t0 $t1 $now $false
+  # A finished job doesn't change: its timeline and summary are worked out once (per look), and the
+  # drawing below is skipped on later refreshes, so they don't steal frames from the fold.
+  $logN = (Get-List $s.log).Count
+  $fk = '{0}|{1}|{2}|{3}|{4}|{5}|{6}|{7}' -f $t0, $t1, $logN, $maxRows, $script:T.GetHashCode(), $prefs.details, $prefs.progressOnly, [int]$card.Seg.ActualWidth
+  $fresh = $card.finKey -ne $fk
+  if ($fresh) {
+    $card.finKey = $fk
+    $card.finTl = Get-Timeline $s $t0 $t1 $now $false
+    $card.finFails = @((Get-List $s.log) | Where-Object { $_.ok -eq $false }).Count
+    # How it ended: on an error, on a failed step of Claude's own, or done (same rule as the notes).
+    $lastOwn = @((Get-List $s.log) | Where-Object { -not $_.agent -and -not $_.by } | Sort-Object { [double](Get-Finite $_.endedAt) }) | Select-Object -Last 1
+    $card.finEnd = 'Done'
+    if ($s.endedOn -and $s.endedOn -isnot [string] -and [double](Get-Finite $s.endedOn.at) -ge $t0) { $card.finEnd = 'Stopped' }
+    elseif ($lastOwn -and $lastOwn.ok -eq $false) { $card.finEnd = 'Failed' }
+  }
+  $tl = $card.finTl; $fails = $card.finFails; $endWord = $card.finEnd
+  $endBrush = switch ($endWord) { 'Stopped' { $script:T.wait } 'Failed' { $script:T.fail } default { $script:T.done } }
   $card.Chat.Text = Get-ChatName $s
-  $fails = @((Get-List $s.log) | Where-Object { $_.ok -eq $false }).Count
-  # How it ended: on an error, on a failed step of Claude's own, or done (same rule as the notes).
-  $lastOwn = @((Get-List $s.log) | Where-Object { -not $_.agent -and -not $_.by } | Sort-Object { [double](Get-Finite $_.endedAt) }) | Select-Object -Last 1
-  $endWord = 'Done'; $endBrush = $script:T.done
-  if ($s.endedOn -and $s.endedOn -isnot [string] -and [double](Get-Finite $s.endedOn.at) -ge $t0) { $endWord = 'Stopped'; $endBrush = $script:T.wait }
-  elseif ($lastOwn -and $lastOwn.ok -eq $false) { $endWord = 'Failed'; $endBrush = $script:T.fail }
   $card.Dot.Fill = $endBrush
   # Minimise to a one-line "done" row when other cards are on screen (after a short hold, and only
   # if there is time left to see it). A card on its own keeps its full summary.
@@ -1894,8 +2082,8 @@ function Update-FinishedCard($card, $s, [double]$now, [int]$maxRows, [bool]$othe
   if ($card.compact) {
     $card.Clock.Foreground = $script:T.sub   # the summary sits quieter than the chat name
     Set-RowTextStyle $card
-    $card.Clock.Text = '{3}  ·  {0}  ·  {1} steps{2}' -f (Format-Ms $took), (Get-List $s.log).Count, $(if ($fails) { "  ·  $fails failed" } else { '' }), $endWord
-    Draw-Segments $card $tl.segs $t0 ([math]::Max($t1 - $t0, 1000))
+    $card.Clock.Text = '{3}  ·  {0}  ·  {1} steps{2}' -f (Format-Ms $took), $logN, $(if ($fails) { "  ·  $fails failed" } else { '' }), $endWord
+    if ($fresh -or $card.finDrawn -ne 'row') { Draw-Segments $card $tl.segs $t0 ([math]::Max($t1 - $t0, 1000)); $card.finDrawn = 'row' }
     return
   }
   $card.Clock.Text = $endWord
@@ -1905,11 +2093,14 @@ function Update-FinishedCard($card, $s, [double]$now, [int]$maxRows, [bool]$othe
   Set-Shown $card.NowDetail $false $now
   Set-Shown $card.StepPanel $false $now
   Set-Shown $card.Notice $false $now
-  Draw-Segments $card $tl.segs $t0 ([math]::Max($t1 - $t0, 1000))
   $card.TurnPct.Text = '100%'
-  $card.TurnText.Text = Join-Phrases ('Took {0}  ·  {1} steps{2}' -f (Format-Ms $took), (Get-List $s.log).Count, $(if ($fails) { "  ·  $fails failed" } else { '' }))
-  Draw-Team $card $s $now $false
-  Draw-Activity $card @($tl.rows | Where-Object { -not $_.agent }) $maxRows   # helpers are shown in the Team view
+  $card.TurnText.Text = Join-Phrases ('Took {0}  ·  {1} steps{2}' -f (Format-Ms $took), $logN, $(if ($fails) { "  ·  $fails failed" } else { '' }))
+  if ($fresh -or $card.finDrawn -ne 'full') {
+    Draw-Segments $card $tl.segs $t0 ([math]::Max($t1 - $t0, 1000))
+    Draw-Team $card $s $now $false
+    Draw-Activity $card @($tl.rows | Where-Object { -not $_.agent }) $maxRows   # helpers are shown in the Team view
+    $card.finDrawn = 'full'
+  }
 }
 
 # ---------- notes in the window: a long job finished, failed, or stopped on an error ----------
@@ -1924,6 +2115,7 @@ $NOTE_SHOW = 3           # notes shown at once; the rest are counted on a "+N mo
 $script:noted = @{}      # chat|job start -> when it was handled, so each job notes once
 $script:notices = New-Object System.Collections.ArrayList   # newest first
 $script:noteN = 0
+$script:noteHeld = @{}   # chat -> its note, waiting for its card to leave
 $script:noteShowAll = $false   # "Show N more" was clicked
 $script:noteUndo = $null      # just cleared: @{ items; until } for the Undo link
 $script:noteFrom = [double][DateTimeOffset]::UtcNow.ToUnixTimeMilliseconds()   # never for jobs that ended before the app started
@@ -1998,7 +2190,11 @@ function New-NoticeEl($n) {
   $l1.SetResourceReference([System.Windows.Controls.TextBlock]::ForegroundProperty, 'TextMain')
   $l2 = New-Object System.Windows.Controls.TextBlock; $l2.FontFamily = 'Segoe UI'; $l2.FontSize = 11; $l2.Margin = '0,1,0,0'; $l2.TextTrimming = 'CharacterEllipsis'
   [void]$sp.Children.Add($l1); [void]$sp.Children.Add($l2)
-  $x = [Windows.Markup.XamlReader]::Parse($noteCloseXaml); [System.Windows.Controls.Grid]::SetColumn($x, 2); $x.Margin = '4,0,0,0'; $x.Tag = $n.key
+  # (The ×'s look is parsed once and shared: parsing XAML for every note cost ~50 ms on the UI thread.)
+  if (-not $script:noteCloseTpl) { $script:noteCloseTpl = ([Windows.Markup.XamlReader]::Parse($noteCloseXaml)).Template }
+  $x = New-Object System.Windows.Controls.Button
+  $x.Template = $script:noteCloseTpl; $x.Width = 20; $x.Height = 20; $x.VerticalAlignment = 'Top'; $x.Cursor = 'Hand'; $x.ToolTip = 'Dismiss'; $x.Focusable = $false
+  [System.Windows.Controls.Grid]::SetColumn($x, 2); $x.Margin = '4,0,0,0'; $x.Tag = $n.key
   [System.Windows.Automation.AutomationProperties]::SetName($x, 'Dismiss')
   $x.Add_Click({ param($sender, $ev) try { Remove-Notice ([string]$sender.Tag) } catch { Write-UiError $_ } })
   $b.Add_MouseLeftButtonUp({ param($sender, $ev) try { Remove-Notice ([string]$sender.Tag) } catch { Write-UiError $_ } })
@@ -2017,7 +2213,7 @@ function Set-GroupText($n) {
   $n.line2 = '{0}  ·  {1}' -f ((@($m | ForEach-Object { $_.folder } | Select-Object -Unique)) -join ', '), $(if ($bad) { "$bad failed" } else { 'No problems' })
 }
 
-function Add-Notice($n, [double]$now) {
+function Add-Notice($n, [double]$now, [bool]$quiet = $false) {
   # A newer note for the same chat replaces the older one.
   foreach ($o in @($script:notices)) { if (@($o.members).Count -eq 1 -and $o.members[0].id -eq $n.id) { Remove-Notice $o.key $true } }
   $newest = if ($script:notices.Count) { $script:notices[0] } else { $null }
@@ -2032,10 +2228,11 @@ function Add-Notice($n, [double]$now) {
   [void]$ui.Notices.Children.Insert(0, $g.el)
   Update-NoticeLook $now   # styled before it is measured (one line in "Show only progress")
   if ($script:perf.anim -and -not $Snapshot -and -not $script:reduce -and $window.IsVisible -and -not $prefs.mini) {
+    # (Started after this refresh, on a fresh frame: see Start-Anim.)
     $g.el.Opacity = 0; Move-To $g.el $P_Opacity 1 220
     Set-HeightAnim $g.el 0 (Get-NaturalHeight $g.el) 220 $true
   }
-  if ($prefs.sound) { try { [System.Media.SystemSounds]::Asterisk.Play() } catch {} }
+  if ($prefs.sound -and -not $quiet) { try { [System.Media.SystemSounds]::Asterisk.Play() } catch {} }
 }
 
 function Remove-Notice([string]$key, [bool]$instant = $false) {
@@ -2131,6 +2328,7 @@ function Update-Notices($state, [double]$now) {
         $id = $p.Name; $s = $p.Value
         if ($s.turnStartedAt) {
           # That chat started a new job: its card shows it now, so its note goes.
+          $script:noteHeld.Remove($id)
           foreach ($o in @($script:notices)) {
             $left = @($o.members | Where-Object { $_.id -ne $id })
             if ($left.Count -eq @($o.members).Count) { continue }
@@ -2146,7 +2344,14 @@ function Update-Notices($state, [double]$now) {
         if ($script:noted.ContainsKey($k)) { continue }
         $script:noted[$k] = $now
         $n = Get-JobNotice $id $s
-        if ($n) { Add-Notice $n $now }
+        if ($n) {
+          # Its card is still showing how it ended: the note waits and grows in as that card leaves,
+          # so the window changes height once instead of twice. (The chime plays now.)
+          if ($script:cards.ContainsKey($id) -and -not $script:cards[$id].leaving -and $window.IsVisible -and -not $prefs.mini) {
+            $script:noteHeld[$id] = $n
+            if ($prefs.sound) { try { [System.Media.SystemSounds]::Asterisk.Play() } catch {} }
+          } else { Add-Notice $n $now }
+        }
       } catch { Write-UiError $_ }
     }
   }
@@ -2201,8 +2406,16 @@ function Set-FirstCard($active, [double]$now) {
 $script:stateErrorLogged = $false
 # Reads state.json without blocking hook.js from replacing it (share read, write and delete).
 # If it can't be read or parsed, keep showing the last good state and log the reason once.
+# The file's write time and length: when they haven't changed, the last parse is reused (checked
+# again every 2 s anyway, in case two writes landed in one clock tick with the same length).
+$script:stateStamp = ''; $script:stateParsedAt = 0.0
+function Get-StateStamp { try { $fi = New-Object System.IO.FileInfo($stateFile); if ($fi.Exists) { return '{0}|{1}' -f $fi.LastWriteTimeUtc.Ticks, $fi.Length } } catch {}; return '' }
+function Test-StateChanged { return (Get-StateStamp) -ne $script:stateStamp }
 function Read-State {
   if (-not (Test-Path $stateFile)) { return $null }
+  $stamp = Get-StateStamp; $tnow = [double][DateTimeOffset]::UtcNow.ToUnixTimeMilliseconds()
+  if ($script:lastGoodState -and $stamp -eq $script:stateStamp -and ($tnow - $script:stateParsedAt) -lt 2000) { return $script:lastGoodState }
+  $script:stateStamp = $stamp; $script:stateParsedAt = $tnow
   try {
     $fs = [System.IO.File]::Open($stateFile, 'Open', 'Read', [System.IO.FileShare]'ReadWrite, Delete')
     try {
@@ -2257,7 +2470,8 @@ function Update-View {
     if (-not $script:cards.ContainsKey($x.id)) { $script:cards[$x.id] = New-Card; $entering += $x.id }
     $card = $script:cards[$x.id]
     if ($card.leaving) { $card.leaving = $false; Stop-Leave $card }   # it came back while leaving
-    if ($x.s.turnStartedAt) { Update-ActiveCard $card $x.id $x.s $now $maxRows } else { Update-FinishedCard $card $x.s $now $maxRows ($shown.Count -gt 1) }
+    $script:skipShown = [bool]$card.compact
+    try { if ($x.s.turnStartedAt) { Update-ActiveCard $card $x.id $x.s $now $maxRows } else { Update-FinishedCard $card $x.s $now $maxRows ($shown.Count -gt 1) } } finally { $script:skipShown = $false }
     Complete-Expand $card
   }
   $ids = @($shown | ForEach-Object { $_.id })
@@ -2267,6 +2481,8 @@ function Update-View {
     if (-not $card.leaving) {
       # Fade, shrink slightly and fold closed (with the gap above it), so the cards below glide up.
       $card.leaving = $true; $card.removeAt = $now + (Start-Leave $card)
+      # Its note (held back while the card showed the result) grows in as the card folds away.
+      if ($script:noteHeld.ContainsKey($k)) { $hn = $script:noteHeld[$k]; $script:noteHeld.Remove($k); if ($prefs.notify) { try { Add-Notice $hn $now $true } catch { Write-UiError $_ } } }
       # No animation (Saver mode): take it out now, not at the next refresh, so no empty gap lingers.
       if ($card.removeAt -le $now) { $script:cards.Remove($k); $script:seen.Remove($k) }
     } elseif ($now -ge $card.removeAt) {
@@ -2342,7 +2558,7 @@ function Update-View {
       $longest = @($needIds | ForEach-Object { $script:cards[$_] } | Sort-Object { [double]$_.waitNow } -Descending) | Select-Object -First 1
       $ui.Count.Text = if ($needN -gt 1) { 'longest {0}' -f (Format-Ms $longest.waitNow) } else { '{0}  ·  {1}' -f ($needC.Chat.Text -replace '\s+·.*$', ''), (Format-Ms $needC.waitNow) }
       $ui.MiniFill.Background = $script:T.wait
-      if ($null -ne $needC.jobPct) { if ($snapFill) { $ui.MiniFill.BeginAnimation($P_Width, $null); $ui.MiniFill.Width = $tw * $needC.jobPct / 100 } else { Move-To $ui.MiniFill $P_Width ($tw * $needC.jobPct / 100) 250 } }
+      if ($null -ne $needC.jobPct) { if ($snapFill) { $ui.MiniFill.BeginAnimation($P_Width, $null); $ui.MiniFill.Width = $tw * $needC.jobPct / 100 } else { Move-ToOnce $ui.MiniFill $P_Width ($tw * $needC.jobPct / 100) 250 } }
     } elseif ($active.Count -gt 0) {
       $ui.MiniFill.SetResourceReference([System.Windows.Controls.Border]::BackgroundProperty, 'Accent')
       $c = $script:cards[$active[0].id]
@@ -2353,7 +2569,7 @@ function Update-View {
         else { Move-To $ui.MiniFill $P_Width ($tw * $c.jobPctAhead / 100) $LEAD 'linear' }
       } else {
         $ui.Count.Text = ('{0}{1} elapsed  ·  learning' -f $more, (Format-Ms $c.jobSpent))
-        Move-To $ui.MiniFill $P_Width ($tw * 0.15) 250
+        Move-ToOnce $ui.MiniFill $P_Width ($tw * 0.15) 250
       }
     } elseif ($note) {
       $ui.Count.Text = if ($script:notices.Count -gt 1) { '+{0}' -f ($script:notices.Count - 1) } else { '' }
@@ -2361,7 +2577,7 @@ function Update-View {
     } elseif ($finished.Count -gt 0) {
       $ui.Count.Text = 'done'
       $ui.MiniTrack.Visibility = 'Visible'
-      Move-To $ui.MiniFill $P_Width $tw 250
+      Move-ToOnce $ui.MiniFill $P_Width $tw 250
     } else {
       $ui.Count.Text = ''
       $ui.MiniTrack.Visibility = 'Collapsed'
@@ -2476,6 +2692,7 @@ if ($Snapshot) {
 $timer = New-Object System.Windows.Threading.DispatcherTimer
 $timer.Interval = [TimeSpan]::FromMilliseconds(500)
 $script:lastError = $null
+$script:lastViewAt = 0.0
 $timer.Add_Tick({
   # Opened again while already running: show the window (for the usual few seconds if Claude is idle).
   # Start menu > Claude Progress while running: show the window and open Settings in front.
@@ -2488,10 +2705,16 @@ $timer.Add_Tick({
     $script:startedAt = [double][DateTimeOffset]::UtcNow.ToUnixTimeMilliseconds()
     try { $window.Activate() | Out-Null } catch {}
   }
+  # While something is moving, skip this refresh (nothing new to show, and it would steal frames).
+  $tv = [double][DateTimeOffset]::UtcNow.ToUnixTimeMilliseconds()
+  if ($tv -lt $script:animUntil -and ($tv - $script:lastViewAt) -lt 1000 -and -not (Test-StateChanged)) { return }
+  $script:lastViewAt = $tv
+  $script:inView = $true
   try { Update-View } catch {
     $msg = "$($_.Exception.Message) @ line $($_.InvocationInfo.ScriptLineNumber)"
     if ($msg -ne $script:lastError) { $script:lastError = $msg; Add-Content -Path (Join-Path $root 'window-errors.log') -Value "$(Get-Date -Format s) $msg" }
   }
+  $script:inView = $false; Invoke-AnimQueue
 })
 
 # ---------- performance modes ----------
@@ -2553,9 +2776,16 @@ if ($Demo) {
 }
 
 $window.Add_Loaded({
-  if ($null -ne $prefs.left -and $null -ne $prefs.top) { $window.Left = $prefs.left; $window.Top = $prefs.top } else { Move-ToCorner }
+  if ($null -ne $prefs.left -and $null -ne $prefs.top) { $window.Left = $prefs.left; $window.Top = $prefs.top; $script:homeTop = [double]$prefs.top; $script:homeRight = if ($null -ne $prefs.right) { [double]$prefs.right } else { [double]$prefs.left + $window.ActualWidth }; Set-WindowTop
+    # A place saved on a screen that isn't there any more: start from where it landed instead.
+    $wa0 = Get-WorkArea; if ($script:homeTop -lt $wa0.Top -or $script:homeTop -gt $wa0.Bottom + 1) { $script:homeTop = $window.Top }
+    if ($script:homeRight -lt $wa0.Left + 40 -or $script:homeRight -gt $wa0.Right) { $script:homeRight = $window.Left + $window.ActualWidth }
+  } else { Move-ToCorner }
   try { Update-View } catch {}
   $timer.Start()
+  # Build one note out of sight once the window is idle: PowerShell compiles code the first time it runs,
+  # so the first real note would otherwise cost a long pause just as it should be growing in.
+  if (-not $Snapshot) { [void]$window.Dispatcher.BeginInvoke([Action]{ try { $w = @{ key = 'warm-up' }; New-NoticeEl $w; [void](Get-NaturalHeight $w.el) } catch {} }, [System.Windows.Threading.DispatcherPriority]::ApplicationIdle) }
   try { Set-ChatWatch ([bool]$prefs.chats) } catch { Write-UiError $_ }
   # First start: show Settings once, quietly (it is always behind the gear and the Start menu).
   try {
